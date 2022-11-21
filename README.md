@@ -1,6 +1,6 @@
 ## Introduction
 
-Enable netwrok module for ThunderGP. 
+Enable network module for ThunderGP. 
 
 ## Prerequisites
 * The gcc-9.3
