@@ -16,7 +16,7 @@ help:
 	@echo ""
 
 
-DEVICES ?= xilinx_u280_xdma_201920_3
+DEVICES ?= xilinx_u250_gen3x16_xdma_3_1_202020_1
 KRNL_NAME := networklayer
 SUBMODULENAME = 100G-fpga-network-stack-core
 
@@ -60,7 +60,7 @@ $(TEMP_DIR)/${KRNL_NAME}.xo: kernel.xml package_netlayer.tcl src/*.v src/*.vhd
 	$(VIVADO) -mode batch -source package_netlayer.tcl -notrace -tclargs $@ ${KRNL_NAME} $(XSA)
 
 check-devices:
-ifndef DEVICE
+ifndef DEVICES
 	$(error DEVICE not set. Please set the DEVICE properly and rerun. Run "make help" for more details.)
 endif
 
