@@ -13,7 +13,10 @@ extern "C" {
         unsigned int            vertexNum
     )
     {
-#pragma HLS INTERFACE m_axi port=input_from_mem offset=slave bundle=gmem2 max_read_burst_length=64 num_write_outstanding=4
+#pragma HLS INTERFACE m_axi port=input_from_mem offset=slave bundle=gmem2 \
+                        max_read_burst_length=64 num_read_outstanding=32 \
+                        max_write_burst_length=64 num_write_outstanding=32
+
 #pragma HLS INTERFACE s_axilite port=input_from_mem bundle=control
 
 #pragma HLS INTERFACE s_axilite port=vertexNum      bundle=control

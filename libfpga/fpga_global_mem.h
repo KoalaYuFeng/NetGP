@@ -85,14 +85,20 @@ void burstReadLiteRaw(
     unsigned int offset = edge_offset  >> LOG2_SIZE_BY_INT;
     unsigned int end = ((edge_end - 1) >> (LOG2_SIZE_BY_INT)) + 1;
 
+    unsigned int burst_read_size = 64;
+
     {
 
-timeLineLoop : for (unsigned int i = (offset); i < (offset+end); i ++)
+timeLineLoop : for (unsigned int i = (offset); i < (offset + (end / burst_read_size)); i ++)
         {
+            for (unsigned int j = 0; j < burst_read_size; j++) {
+
 #pragma HLS PIPELINE II=1
             burst_raw out_raw;
-            out_raw = input[i];
+            out_raw = input[j + i * burst_read_size];
             write_to_stream(outstream, out_raw);
+
+            }
         }
     }
     return;
@@ -111,14 +117,20 @@ void burstReadLite(
     unsigned int offset = edge_offset  >> LOG2_SIZE_BY_INT;
     unsigned int end = ((edge_end - 1) >> (LOG2_SIZE_BY_INT)) + 1;
 
+    unsigned int burst_read_size = 64;
+
     {
 
-timeLineLoop : for (unsigned int i = (offset); i < (offset+end); i ++)
+timeLineLoop : for (unsigned int i = (offset); i < (offset + (end / burst_read_size)); i ++)
         {
+            for (unsigned int j = 0; j < burst_read_size; j++) {
+
 #pragma HLS PIPELINE II=1
-            burst_dest out_raw;
-            out_raw.data = input[i];
-            write_to_stream(outstream, out_raw);
+                burst_dest out_raw;
+                out_raw.data = input[j + i * burst_read_size];
+                write_to_stream(outstream, out_raw);
+
+            }
         }
     }
     return;
@@ -295,8 +307,6 @@ void writeBackLite(int totalSize, uint16 *addr, hls::stream<burst_dest>  &input)
 {
 #pragma HLS function_instantiate variable=addr
 
-    burst_dest ram[WRITE_BACK_BURST_LENGTH];
-
     unsigned int counter = 0;
     for (int loopCount = 0; loopCount < totalSize / WRITE_BACK_BURST_LENGTH / SIZE_BY_INT; loopCount++)
     {
@@ -306,12 +316,7 @@ void writeBackLite(int totalSize, uint16 *addr, hls::stream<burst_dest>  &input)
 #pragma HLS PIPELINE II=1
             burst_dest tmp;
             read_from_stream(input, tmp);
-            ram[i] = tmp;
-        }
-        for (int j = 0; j < WRITE_BACK_BURST_LENGTH; j++)
-        {
-#pragma HLS PIPELINE II=1
-            addr[(counter << LOG_WRITE_BURST_LEN) + j] = ram[j].data;
+            addr[(counter << LOG_WRITE_BURST_LEN) + i] = tmp.data;
         }
         counter ++;
 

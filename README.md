@@ -31,6 +31,8 @@ $ make app=pr all # make the FPGA bitstream. It takes time :) around 5 hours.
 # For execution on real hardware. The path of graph dataset needs to be provided by the user. 
 ```
 
+## attention
+// there need some modification in connection.ini file, advanced [advanced] path.
 
 
 
