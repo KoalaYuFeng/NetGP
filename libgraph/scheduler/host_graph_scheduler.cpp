@@ -33,16 +33,17 @@ int schedulerInit(void *arg)
 
 int schedulerSubPartitionArrangement(int partIndex)
 {
-    partitionDescriptor * partition = getPartition(partIndex);
-    if (scheduler.subPartionScheduler == NULL)
-    {
-        for (int i = 0; i < SUB_PARTITION_NUM; i++)
-        {
-            partition->finalOrder[i] = i;
-        }
-        return 0;
-    }
-    return scheduler.subPartionScheduler(partIndex);
+    // partitionDescriptor * partition = getPartition(partIndex);
+    // if (scheduler.subPartionScheduler == NULL)
+    // {
+    //     for (int i = 0; i < SUB_PARTITION_NUM; i++)
+    //     {
+    //         partition->finalOrder[i] = i;
+    //     }
+    //     return 0;
+    // }
+    // return scheduler.subPartionScheduler(partIndex);
+    return 0;
 }
 
 

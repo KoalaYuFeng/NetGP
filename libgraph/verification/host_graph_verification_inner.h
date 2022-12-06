@@ -12,21 +12,22 @@
 
 //#define PROBE_VERTEX                    (112)
 
-
-void partitionGatherScatterCModel(
-    cl_context              &context,
-    cl_device_id            &device,
-    int                     superStep,
-    int                     cuIndex,
-    subPartitionDescriptor  *subPartitions
+#if 0
+ void partitionGatherScatterCModel(
+    // cl_context              &context,
+    // cl_device_id            &device,
+    // int                     superStep,
+    // int                     cuIndex,
+    // subPartitionDescriptor  *subPartitions
 );
+#endif
 
 void partitionApplyCModel(
-    cl_context              &context,
-    cl_device_id            &device,
-    int                     superStep,
-    int                     partId,
-    unsigned int            applyArg
+    // cl_context              &context,
+    // cl_device_id            &device,
+    // int                     superStep,
+    // int                     partId,
+    // unsigned int            applyArg
 );
 
 

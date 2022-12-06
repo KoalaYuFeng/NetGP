@@ -6,80 +6,54 @@ Graph* createGraph(const std::string &gName, const std::string &mode) {
     Graph* gptr;
     std::string dir = mode;
 
-    if (gName == "dblp") {
-        gptr = new Graph(dir + "dblp.ungraph.txt");
+    if (gName == "AM") {
+        gptr = new Graph(dir + "AM/amazon-2008/amazon-2008.mtx");
     }
-    else if (gName == "youtube") {
-        gptr = new Graph(dir + "youtube.ungraph.txt");
+    else if (gName == "BB") {
+        gptr = new Graph(dir + "BB/web-baidu-baike.edges");
     }
-    else if (gName == "lj") {
-        gptr = new Graph(dir + "lj.ungraph.txt");
+    else if (gName == "FU") {
+        gptr = new Graph(dir + "FU/soc-flickr-und.edges");
     }
-    else if (gName == "pokec") {
-        gptr = new Graph(dir + "pokec-relationships.txt");
+    else if (gName == "G23") {
+        gptr = new Graph(dir + "G23/graph500-scale23-ef16_adj/graph500-scale23-ef16_adj.edges");
     }
-    else if (gName == "wiki-talk") {
-        gptr = new Graph(dir + "wiki-Talk.txt");
+    else if (gName == "G24") {
+        gptr = new Graph(dir + "G24/graph500-scale24-ef16_adj.edges");
     }
-    else if (gName == "lj1") {
-        gptr = new Graph(dir + "LiveJournal1.txt");
+    else if (gName == "G25") {
+        gptr = new Graph(dir + "G25/graph500-scale25-ef16_adj.edges");
     }
-    else if (gName == "rmat-12-8") {
-        gptr = new Graph(dir + "rmat-12-8.txt");
+    else if (gName == "GG") {
+        gptr = new Graph(dir + "GG/web-Google/web-Google.mtx");
     }
-    else if (gName == "rmat-21-32") {
-        gptr = new Graph(dir + "rmat-21-32.txt");
+    else if (gName == "HD") {
+        gptr = new Graph(dir + "HD/web-hudong.edges");
     }
-    else if (gName == "rmat-19-32") {
-        gptr = new Graph(dir + "rmat-19-32.txt");
+    else if (gName == "HW") {
+        gptr = new Graph(dir + "HW/ca-hollywood-2009.mtx");
     }
-    else if (gName == "rmat-21-128") {
-        gptr = new Graph(dir + "rmat-21-128.txt");
+    else if (gName == "LJ") {
+        gptr = new Graph(dir + "LJ/soc-LiveJournal1.txt");
     }
-    else if (gName == "twitter") {
-        gptr = new Graph(dir + "twitter_rv.txt");
+    else if (gName == "MG") {
+        gptr = new Graph(dir + "MG/bio-mouse-gene/bio-mouse-gene.edges");
     }
-    else if (gName == "friendster") {
-        gptr = new Graph(dir + "friendster.ungraph.txt");
+    else if (gName == "PK") {
+        gptr = new Graph(dir + "PK/soc-pokec-relationships.txt");
     }
-    else if (gName == "example") {
-        gptr = new Graph(dir + "rmat-1k-10k.txt");
+    else if (gName == "TC") {
+        gptr = new Graph(dir + "TC/wiki-topcats.txt");
     }
-    else if (gName == "rmat-12-4") {
-        gptr = new Graph(dir + "rmat-12-4.txt");
+    else if (gName == "WT") {
+        gptr = new Graph(dir + "WT/wiki-Talk/wiki-Talk.edges");
     }
-    else if (gName == "rmat-23-4") {
-        gptr = new Graph(dir + "rmat-23-4.txt");
-    }
-    else if (gName == "rmat-23-16") {
-        gptr = new Graph(dir + "rmat-23-16.txt");
-    }
-    else if (gName == "wiki-Talk") {
-        gptr = new Graph(dir + "soc-wiki-Talk-dir.mtx");
-    }
-    else if (gName == "orkut") {
-        gptr = new Graph(dir + "soc-orkut-dir.edges");
-    }
-    else if (gName == "twitter-higgs") {
-        gptr = new Graph(dir + "soc-twitter-higgs.edges");
-    }
-    else if (gName == "twitter-2010") {
-        gptr = new Graph(dir + "soc-twitter-2010.mtx");
-    }
-    else if (gName == "google") {
-        gptr = new Graph(dir + "web-Google.mtx");
-    }
-    else if (gName == "mouse-gene") {
-        gptr = new Graph(dir + "bio-mouse-gene.edges");
-    }
-    else if (gName == "flixster") {
-        gptr = new Graph(dir + "soc-flixster.mtx");
-    }
-    else if (gName == "rmat-24-16") {
-        gptr = new Graph(dir +  "rmat-24-16.txt");
+    else if (gName == "R19") {
+        gptr = new Graph("/data/graph_dataset/rmat-19-32.txt");
     }
     else {
-        gptr = new Graph(gName);
+        gptr = new Graph("/data/graph_dataset/rmat-12-4.txt");
+        std::cout << "load /data/graph_dataset/rmat-12-4.txt .." << std::endl;
     }
     return gptr;
 }

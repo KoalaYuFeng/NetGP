@@ -27,93 +27,93 @@ void base_mem_init(cl_context &context)
     }
 }
 
-static void gs_mem_init(cl_context &context, gatherScatterDescriptor *gsItem, int cuIndex, void *data)
-{
-    gsItem->prop[0].id =  MEM_ID_GS_BASE + cuIndex * MEM_ID_GS_OFFSET;
-    gsItem->prop[0].name = "cu prop ping";
-    gsItem->prop[0].attr = ATTR_PL_HBM;
-    gsItem->prop[0].unit_size = sizeof(int);
-    gsItem->prop[0].size_attr = SIZE_IN_VERTEX;
+// static void gs_mem_init(cl_context &context, gatherScatterDescriptor *gsItem, int cuIndex, void *data)
+// {
+    // gsItem->prop[0].id =  MEM_ID_GS_BASE + cuIndex * MEM_ID_GS_OFFSET;
+    // gsItem->prop[0].name = "cu prop ping";
+    // gsItem->prop[0].attr = ATTR_PL_HBM;
+    // gsItem->prop[0].unit_size = sizeof(int);
+    // gsItem->prop[0].size_attr = SIZE_IN_VERTEX;
 
-    // modify here to change memory channel distribution
-    gsItem->prop[0].ext_attr.flags = bank[2 * cuIndex + 1];
+    // // modify here to change memory channel distribution
+    // gsItem->prop[0].ext_attr.flags = bank[2 * cuIndex + 1];
 
-    he_mem_init(context, &gsItem->prop[0]);
-    memcpy(gsItem->prop[0].data, data, gsItem->prop[0].size);
+    // he_mem_init(context, &gsItem->prop[0]);
+    // memcpy(gsItem->prop[0].data, data, gsItem->prop[0].size);
 
-    gsItem->prop[1].id =  MEM_ID_GS_BASE + cuIndex * MEM_ID_GS_OFFSET + 2;
-    gsItem->prop[1].name = "cu prop pong";
-    gsItem->prop[1].attr = ATTR_PL_HBM;
-    gsItem->prop[1].unit_size = sizeof(int);
-    gsItem->prop[1].size_attr = SIZE_IN_VERTEX;
+    // gsItem->prop[1].id =  MEM_ID_GS_BASE + cuIndex * MEM_ID_GS_OFFSET + 2;
+    // gsItem->prop[1].name = "cu prop pong";
+    // gsItem->prop[1].attr = ATTR_PL_HBM;
+    // gsItem->prop[1].unit_size = sizeof(int);
+    // gsItem->prop[1].size_attr = SIZE_IN_VERTEX;
 
-    gsItem->prop[1].ext_attr.flags = bank[2 * cuIndex + 1];
+    // gsItem->prop[1].ext_attr.flags = bank[2 * cuIndex + 1];
 
-    he_mem_init(context, &gsItem->prop[1]);
-    memcpy(gsItem->prop[1].data, data, gsItem->prop[1].size);
-}
+    // he_mem_init(context, &gsItem->prop[1]);
+    // memcpy(gsItem->prop[1].data, data, gsItem->prop[1].size);
+//}
 
 
 void process_mem_init(cl_context &context)
 {
-    int *vertexPushinPropMapped = (int*)get_host_mem_pointer(MEM_ID_PUSHIN_PROP_MAPPED);
-    for (int i = 0; i < SUB_PARTITION_NUM; i++)
-    {
-        gs_mem_init(context, getGatherScatter(i), i, vertexPushinPropMapped);
-    }
+    // int *vertexPushinPropMapped = (int*)get_host_mem_pointer(MEM_ID_PUSHIN_PROP_MAPPED);
+    // for (int i = 0; i < SUB_PARTITION_NUM; i++)
+    // {
+    //     gs_mem_init(context, getGatherScatter(i), i, vertexPushinPropMapped);
+    // }
 }
 
 void partition_mem_init(cl_context &context, int blkIndex, int size, int cuIndex)
 {
-    printf("[INIT] current cuIndex is: %d.\n", cuIndex);
-    int i = blkIndex;
-    subPartitionDescriptor *partitionItem  = getSubPartition(i);
-    {
+//     printf("[INIT] current cuIndex is: %d.\n", cuIndex);
+//     int i = blkIndex;
+//     subPartitionDescriptor *partitionItem  = getSubPartition(i);
+//     {
         
-        partitionItem->cuIndex = cuIndex;
-        partitionItem->edgeTail.id = MEM_ID_PARTITION_BASE + i * MEM_ID_PARTITION_OFFSET;
-        partitionItem->edgeTail.name = "partition edgeTail";
-        partitionItem->edgeTail.attr = ATTR_HOST_ONLY;//ATTR_PL_HBM;
-        partitionItem->edgeTail.unit_size = size * sizeof(int);
-        partitionItem->edgeTail.size_attr = SIZE_USER_DEFINE;
+//         partitionItem->cuIndex = cuIndex;
+//         partitionItem->edgeTail.id = MEM_ID_PARTITION_BASE + i * MEM_ID_PARTITION_OFFSET;
+//         partitionItem->edgeTail.name = "partition edgeTail";
+//         partitionItem->edgeTail.attr = ATTR_HOST_ONLY;//ATTR_PL_HBM;
+//         partitionItem->edgeTail.unit_size = size * sizeof(int);
+//         partitionItem->edgeTail.size_attr = SIZE_USER_DEFINE;
 
-        partitionItem->edgeTail.ext_attr.flags = bank[2 * cuIndex + 1];
+//         partitionItem->edgeTail.ext_attr.flags = bank[2 * cuIndex + 1];
 
-        he_mem_init(context, &partitionItem->edgeTail);
+//         he_mem_init(context, &partitionItem->edgeTail);
 
-        partitionItem->edgeHead.id = MEM_ID_PARTITION_BASE + i * MEM_ID_PARTITION_OFFSET + 1;
-        partitionItem->edgeHead.name = "partition edgeHead";
-        partitionItem->edgeHead.attr = ATTR_PL_HBM;
-        partitionItem->edgeHead.unit_size = size * sizeof(int) * 2; printf ("the size of edge array %d \n", size * 2);
-        partitionItem->edgeHead.size_attr = SIZE_USER_DEFINE;
+//         partitionItem->edgeHead.id = MEM_ID_PARTITION_BASE + i * MEM_ID_PARTITION_OFFSET + 1;
+//         partitionItem->edgeHead.name = "partition edgeHead";
+//         partitionItem->edgeHead.attr = ATTR_PL_HBM;
+//         partitionItem->edgeHead.unit_size = size * sizeof(int) * 2; printf ("the size of edge array %d \n", size * 2);
+//         partitionItem->edgeHead.size_attr = SIZE_USER_DEFINE;
 
-        partitionItem->edgeHead.ext_attr.flags = bank[2 * cuIndex + 0]; 
+//         partitionItem->edgeHead.ext_attr.flags = bank[2 * cuIndex + 0]; 
 
-        he_mem_init(context, &partitionItem->edgeHead);
+//         he_mem_init(context, &partitionItem->edgeHead);
 
-        partitionItem->edgeProp.id = MEM_ID_PARTITION_BASE + i * MEM_ID_PARTITION_OFFSET + 2;
-        partitionItem->edgeProp.name = "partition edgeProp";
-#if HAVE_EDGE_PROP
-        partitionItem->edgeProp.attr = ATTR_PL_HBM;
-#else
-        partitionItem->edgeProp.attr = ATTR_HOST_ONLY;
-#endif
-        partitionItem->edgeProp.unit_size = size * sizeof(int);
-        partitionItem->edgeProp.size_attr = SIZE_USER_DEFINE;
+//         partitionItem->edgeProp.id = MEM_ID_PARTITION_BASE + i * MEM_ID_PARTITION_OFFSET + 2;
+//         partitionItem->edgeProp.name = "partition edgeProp";
+// #if HAVE_EDGE_PROP
+//         partitionItem->edgeProp.attr = ATTR_PL_HBM;
+// #else
+//         partitionItem->edgeProp.attr = ATTR_HOST_ONLY;
+// #endif
+//         partitionItem->edgeProp.unit_size = size * sizeof(int);
+//         partitionItem->edgeProp.size_attr = SIZE_USER_DEFINE;
 
-        partitionItem->edgeProp.ext_attr.flags = bank[2 * SUB_PARTITION_NUM + cuIndex]; // marked as unused
+//         partitionItem->edgeProp.ext_attr.flags = bank[2 * SUB_PARTITION_NUM + cuIndex]; // marked as unused
 
-        he_mem_init(context, &partitionItem->edgeProp);
+//         he_mem_init(context, &partitionItem->edgeProp);
 
-        partitionItem->tmpProp.id = MEM_ID_PARTITION_BASE + i * MEM_ID_PARTITION_OFFSET + 3;
-        partitionItem->tmpProp.name = "partition tmpProp";
-        partitionItem->tmpProp.attr = ATTR_PL_HBM;
-        partitionItem->tmpProp.unit_size = MAX_VERTICES_IN_ONE_PARTITION * sizeof(int);
-        partitionItem->tmpProp.size_attr = SIZE_USER_DEFINE;
+//         partitionItem->tmpProp.id = MEM_ID_PARTITION_BASE + i * MEM_ID_PARTITION_OFFSET + 3;
+//         partitionItem->tmpProp.name = "partition tmpProp";
+//         partitionItem->tmpProp.attr = ATTR_PL_HBM;
+//         partitionItem->tmpProp.unit_size = MAX_VERTICES_IN_ONE_PARTITION * sizeof(int);
+//         partitionItem->tmpProp.size_attr = SIZE_USER_DEFINE;
 
-        partitionItem->tmpProp.ext_attr.flags = bank[2 * cuIndex + 1];
+//         partitionItem->tmpProp.ext_attr.flags = bank[2 * cuIndex + 1];
 
-        he_mem_init(context, &partitionItem->tmpProp);
-    }
+//         he_mem_init(context, &partitionItem->tmpProp);
+//     }
 }
 

@@ -3,7 +3,7 @@
 Enable network module for ThunderGP. 
 
 ## Prerequisites
-* The gcc-9.3
+* The gcc-9.4
 * Tools:
     * Xilinx Vitis 2021.2 Design Suit
 * Evaluated platforms from Xilinx:

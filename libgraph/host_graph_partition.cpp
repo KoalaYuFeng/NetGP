@@ -1,10 +1,12 @@
 
 #include "host_graph_sw.h"
-
 #include "host_graph_mem.h"
-
 #include "host_graph_scheduler.h"
-
+#include <map>
+// XRT includes
+#include "experimental/xrt_bo.h"
+#include "experimental/xrt_device.h"
+#include "experimental/xrt_kernel.h"
 
 #define EDEG_MEMORY_SIZE        ((edgeNum + (ALIGN_SIZE * 4) * 128) * 1)
 #define VERTEX_MEMORY_SIZE      (((vertexNum - 1)/MAX_VERTICES_IN_ONE_PARTITION + 1) * MAX_VERTICES_IN_ONE_PARTITION)
@@ -12,332 +14,215 @@
 
 int acceleratorDataLoad(const std::string &gName, const std::string &mode, graphInfo *info)
 {
-    graphAccelerator * acc = getAccelerator();
-
     Graph* gptr = createGraph(gName, mode);
     CSR* csr    = new CSR(*gptr);
-    acc->csr    = csr;
     free(gptr);
 
-    int vertexNum = csr ->vertexNum;
-    int edgeNum   = csr ->edgeNum;
-
-
-    register_size_attribute(SIZE_IN_EDGE     , EDEG_MEMORY_SIZE  );
-    register_size_attribute(SIZE_IN_VERTEX   , VERTEX_MEMORY_SIZE);
-    register_size_attribute(SIZE_USER_DEFINE , 1                 );
-
-    base_mem_init(acc->context); // initialize all the he_mems. 
-
-    int *rpa        = (int*)get_host_mem_pointer(MEM_ID_RPA);
-    int *cia        = (int*)get_host_mem_pointer(MEM_ID_CIA);
-
-    int *outDeg         = (int*)get_host_mem_pointer(MEM_ID_OUT_DEG);
-    int *outDegOriginal = (int*)get_host_mem_pointer(MEM_ID_OUT_DEG_ORIGIN);
-    for (int i = 0; i < vertexNum; i++) {
-        if (i < csr->vertexNum) { // 'vertexNum' may be aligned.
-            rpa[i] = csr->rpao[i];
-            outDegOriginal[i] = csr->rpao[i + 1] - csr->rpao[i];
-        }
-        else {
-            rpa[i] = 0;
-            outDegOriginal[i] = 0;
-        }
-    }
-    rpa[vertexNum] = csr->rpao[vertexNum];
-    for (int i = 0; i < edgeNum; i++) {
-        cia[i] = csr->ciao[i];
-    }
-
-    /* compress vertex*/
-    unsigned int *vertexMap   = (unsigned int *)get_host_mem_pointer(MEM_ID_VERTEX_INDEX_MAP);
-    unsigned int *vertexRemap = (unsigned int *)get_host_mem_pointer(MEM_ID_VERTEX_INDEX_REMAP);
-
-    unsigned int mapedSourceIndex = 0;
-
-    for (int u = 0; u < vertexNum; u++) {
-        int num = rpa[u + 1] - rpa[u];
-        vertexMap[u] = mapedSourceIndex;
-        if (num != 0)
-        {
-            vertexRemap[mapedSourceIndex] = u;
-            outDeg[mapedSourceIndex] = num;
-            mapedSourceIndex ++;
+    int vertex_num = csr->vertexNum;
+    int edge_num   = csr->edgeNum;
+    info->vertexNum = vertex_num;
+    info->edgeNum   = edge_num;
+    
+    // compress function : delete vertics whose OutDeg = 0;
+    int num_mapped = 0;
+    int num_deleted = 0;
+    for (int i = 0; i < vertex_num; i++) {
+        int outdeg_tmp = csr->rpao[i + 1] - csr->rpao[i];
+        if (outdeg_tmp > 0) {
+            info->outDeg.push_back(outdeg_tmp);
+            info->vertexMapping.push_back(i);
+            num_mapped++;
+        } else {
+            info->outDegZeroIndex.push_back(i);
+            num_deleted++;
         }
     }
 
-    info->vertexNum = vertexNum;
-    info->compressedVertexNum = mapedSourceIndex;
-    info->edgeNum   = edgeNum;
-    info->blkNum =  (mapedSourceIndex + PARTITION_SIZE - 1) / PARTITION_SIZE;
+    if ((num_mapped + num_deleted) != vertex_num) {
+        std::cout << "graph vertex compress error!" << std::endl; // double check
+    }
+
+    info->compressedVertexNum = num_mapped;
+
+    int aligned_vertex_num = ((num_mapped + 1023)/1024)*1024;
+    info->alignedCompressedVertexNum = aligned_vertex_num;
+
+    std::cout << "Vertex compress: original : "<< vertex_num << " compressed : "<< num_mapped << " aligned: "<< aligned_vertex_num << std::endl;
+
+    // compress function : delete edges whose dest vertex's OutDeg = 0;
+    int num_compress_edge = 0;
+    info->rpa.resize(num_mapped + 1);
+    info->rpa[0] = 0;
+    for (int j = 0; j < num_mapped; j++) {
+        int in_deg_tmp = csr->rpai[info->vertexMapping[j]+1] - csr->rpai[info->vertexMapping[j]];
+        info->rpa[j+1] = info->rpa[j] + in_deg_tmp;
+        int bias = csr->rpai[info->vertexMapping[j]];
+        for (int k = 0; k < in_deg_tmp; k++) {
+            info->cia.push_back(csr->ciai[bias + k]);
+            num_compress_edge++;
+        }
+    }
+
+    if ( num_compress_edge != info->rpa[num_mapped]) {
+        std::cout << "graph edge compress error!" << std::endl; // double check
+    }
+
+    std::cout << "Edge compress: original : "<< edge_num << " compressed : "<< num_compress_edge << std::endl;
+    info->compressedEdgeNum = num_compress_edge;
+
+    // calculate partition number and edge number in each subpartition
+    int num_partition = (num_mapped + PARTITION_SIZE - 1) / PARTITION_SIZE; // PARTITION_SIZE align
+    int num_subpartition = SUB_PARTITION_NUM;
+    info->partitionNum = num_partition;
+
+    int vertex_index_start = 0;
+    int vertex_index_end = 0;
+
+    info->chunkProp.resize(num_partition);
+    info->chunkEdgeData.resize(num_partition);
+    info->chunkOutDegData = new int[info->alignedCompressedVertexNum];
+    info->chunkOutRegData = new int[info->alignedCompressedVertexNum];
+
+    info->chunkTempData.resize(SUB_PARTITION_NUM);
+    info->chunkPropData.resize(SUB_PARTITION_NUM);
+
+    for (int i = 0; i < num_partition; i++) {
+        info->chunkProp[i].resize(num_subpartition);
+        info->chunkEdgeData[i].resize(num_subpartition);
+    }
+
+    for (int p = 0; p < num_partition; p++) {
+
+        vertex_index_start = p * PARTITION_SIZE;
+        vertex_index_end = ((p+1)*PARTITION_SIZE > num_mapped)? num_mapped : (p+1)*PARTITION_SIZE;
+
+        int edge_num_tmp = 0;
+        edge_num_tmp = info->rpa[vertex_index_end] - info->rpa[vertex_index_start]; // for each partition
+        edge_num_tmp = (edge_num_tmp + num_subpartition - 1) / num_subpartition; // for each subpartition;
+        edge_num_tmp = ((edge_num_tmp + ALIGN_SIZE - 1) / ALIGN_SIZE) * ALIGN_SIZE; // for alignment
+
+        for (int sp = 0; sp < num_subpartition; sp++) {
+            info->chunkProp[p][sp].edgeNumChunk = edge_num_tmp;
+            info->chunkProp[p][sp].destVertexNumChunk = vertex_index_end - vertex_index_start;
+
+            info->chunkEdgeData[p][sp] = new int[edge_num_tmp * 2]; // each edge has 2 vertics.
+            info->chunkTempData[sp] = new int[info->alignedCompressedVertexNum];
+            info->chunkPropData[sp] = new int[info->alignedCompressedVertexNum];
+        }
+
+        std::cout << "Partition "<< p <<" start index "<< vertex_index_start << " end index "<< vertex_index_end << std::endl;
+        std::cout << " Edge number: partion "<< edge_num_tmp * num_subpartition << " subpartion "<< edge_num_tmp << std::endl;
+    }
 
     return 0;
 }
 
 
-
-static void partitionTransfer(graphInfo *info)
-{
-    graphAccelerator * acc = getAccelerator();
-
-    DEBUG_PRINTF("%s", "transfer base mem start\n");
-    double  begin = getCurrentTimestamp();
-
-    int base_mem_id[]  = {
-        MEM_ID_PUSHIN_PROP_MAPPED,
-        MEM_ID_OUT_DEG,
-        MEM_ID_RESULT_REG
-    };
-    DEBUG_PRINTF("%s", "transfer base mem\n");
-    transfer_data_to_pl(acc->context, acc->device, base_mem_id, ARRAY_SIZE(base_mem_id));
-    DEBUG_PRINTF("%s", "transfer subPartitions mem\n");
-    for (int i = 0; i < info->blkNum; i ++) {
-        for (int j = 0; j < SUB_PARTITION_NUM; j++) {
-            int mem_id[2];
-            //mem_id[0] = getSubPartition(i)->edgeTail.id;
-            mem_id[0] = getSubPartition(i * SUB_PARTITION_NUM + j)->edgeHead.id;
-            mem_id[1] = getSubPartition(i * SUB_PARTITION_NUM + j)->edgeProp.id;
-            transfer_data_to_pl(acc->context, acc->device, mem_id, ARRAY_SIZE(mem_id));   
-        }
-    }
-
-    DEBUG_PRINTF("%s", "transfer cu mem\n");
-    for (int i = 0; i < SUB_PARTITION_NUM; i++)
-    {
-        int mem_id[2];
-        mem_id[0] = getGatherScatter(i)->prop[0].id;
-        mem_id[1] = getGatherScatter(i)->tmpProp.id;
-        transfer_data_to_pl(acc->context, acc->device, mem_id, ARRAY_SIZE(mem_id));
-    }
-
-    double end =  getCurrentTimestamp();
-    DEBUG_PRINTF("data transfer %lf \n", (end - begin) * 1000);
-}
-
 void reTransferProp(graphInfo *info)
 {
-    dataPrepareProperty(info);
-    graphAccelerator * acc = getAccelerator();
+//     dataPrepareProperty(info);
+//     graphAccelerator * acc = getAccelerator();
 
-    int *rpa = (int*)get_host_mem_pointer(MEM_ID_RPA);
-    prop_t *vertexPushinPropMapped = (prop_t*)get_host_mem_pointer(MEM_ID_PUSHIN_PROP_MAPPED);
-    prop_t *vertexPushinProp       = (prop_t*)get_host_mem_pointer(MEM_ID_PUSHIN_PROP);
-    unsigned int *vertexMap        = (unsigned int *)get_host_mem_pointer(MEM_ID_VERTEX_INDEX_MAP);
-    unsigned int *vertexRemap      = (unsigned int *)get_host_mem_pointer(MEM_ID_VERTEX_INDEX_REMAP);
-    unsigned int mapedSourceIndex  = 0;
-    int vertexNum = info->vertexNum;
+//     int *rpa = (int*)get_host_mem_pointer(MEM_ID_RPA);
+//     prop_t *vertexPushinPropMapped = (prop_t*)get_host_mem_pointer(MEM_ID_PUSHIN_PROP_MAPPED);
+//     prop_t *vertexPushinProp       = (prop_t*)get_host_mem_pointer(MEM_ID_PUSHIN_PROP);
+//     unsigned int *vertexMap        = (unsigned int *)get_host_mem_pointer(MEM_ID_VERTEX_INDEX_MAP);
+//     unsigned int *vertexRemap      = (unsigned int *)get_host_mem_pointer(MEM_ID_VERTEX_INDEX_REMAP);
+//     unsigned int mapedSourceIndex  = 0;
+//     int vertexNum = info->vertexNum;
 
-    for (int u = 0; u < vertexNum; u++) {
-        int num = rpa[u + 1] - rpa[u];
-        vertexMap[u] = mapedSourceIndex;
-        if (num != 0)
-        {
-#if CAHCE_FETCH_DEBUG
-            vertexPushinPropMapped[mapedSourceIndex] =  mapedSourceIndex;
-#else
-            vertexPushinPropMapped[mapedSourceIndex] =  vertexPushinProp[u];
-#endif
-            vertexRemap[mapedSourceIndex] = u;
-            mapedSourceIndex ++;
-        }
-    }
-    process_mem_init(acc->context);
-    partitionTransfer(info);
+//     for (int u = 0; u < vertexNum; u++) {
+//         int num = rpa[u + 1] - rpa[u];
+//         vertexMap[u] = mapedSourceIndex;
+//         if (num != 0)
+//         {
+// #if CAHCE_FETCH_DEBUG
+//             vertexPushinPropMapped[mapedSourceIndex] =  mapedSourceIndex;
+// #else
+//             vertexPushinPropMapped[mapedSourceIndex] =  vertexPushinProp[u];
+// #endif
+//             vertexRemap[mapedSourceIndex] = u;
+//             mapedSourceIndex ++;
+//         }
+//     }
+//     process_mem_init(acc->context);
+//     partitionTransfer(info);
 }
 
 
 void partitionFunction(graphInfo *info)
 {
-    graphAccelerator * acc = getAccelerator();
+    std::cout << "Start partition function " << std::endl;
+    int vertex_index_start = 0;
+    int vertex_index_end = 0;
 
-    int *rpa = (int*)get_host_mem_pointer(MEM_ID_RPA);
-    int *cia = (int*)get_host_mem_pointer(MEM_ID_CIA);
-    prop_t *vertexPushinPropMapped = (prop_t*)get_host_mem_pointer(MEM_ID_PUSHIN_PROP_MAPPED);
-    prop_t *vertexPushinProp       = (prop_t*)get_host_mem_pointer(MEM_ID_PUSHIN_PROP);
-    unsigned int *vertexMap        = (unsigned int *)get_host_mem_pointer(MEM_ID_VERTEX_INDEX_MAP);
-    unsigned int *vertexRemap      = (unsigned int *)get_host_mem_pointer(MEM_ID_VERTEX_INDEX_REMAP);
+    std::vector<std::multimap<int, int>> edge_list;
+    edge_list.resize(info->partitionNum);
+    
+    for (int p = 0; p < info->partitionNum; p++) {
 
-    schedulerInit(NULL);
+        vertex_index_start = p * PARTITION_SIZE;
+        vertex_index_end = ((p+1)*PARTITION_SIZE > (info->compressedVertexNum)) ? (info->compressedVertexNum) : (p+1)*PARTITION_SIZE;
 
-    unsigned int mapedSourceIndex = 0;
-    int vertexNum = info->vertexNum;
+        std::cout << "Partition "<< p <<" start index "<< vertex_index_start << " end index "<< vertex_index_end << std::endl;
 
-    for (int u = 0; u < vertexNum; u++) {
-        int num = rpa[u + 1] - rpa[u];
-        vertexMap[u] = mapedSourceIndex;
-        if (num != 0)
-        {
-#if CAHCE_FETCH_DEBUG
-            vertexPushinPropMapped[mapedSourceIndex] =  mapedSourceIndex;
-#else
-            vertexPushinPropMapped[mapedSourceIndex] =  vertexPushinProp[u];
-#endif
-            vertexRemap[mapedSourceIndex] = u;
-            mapedSourceIndex ++;
+        for (int i = info->rpa[vertex_index_start]; i < info->rpa[vertex_index_end]; i++) {
+            int dest_index = vertex_index_start;
+            while (i >= info->rpa[dest_index + 1]) {
+                dest_index++;
+            }
+            edge_list[p].insert(std::pair<int, int>(info->cia[i], dest_index));
         }
-    }
 
-    process_mem_init(acc->context); // initialize all gs kernel memories.
+        for (int i = info->rpa[vertex_index_start]; i < info->rpa[vertex_index_end];) {
+            auto it = edge_list[p].cbegin();
+            for (int sp = 0; sp < SUB_PARTITION_NUM; sp++) {
+                int max = 0;
+                int min = 0;
+                for (int ii = 0; ii < info->chunkProp[p][sp].edgeNumChunk; ii++) {
+                    if (info->rpa[vertex_index_end] <= (sp*info->chunkProp[p][sp].edgeNumChunk + ii + info->rpa[vertex_index_start])) {
+                        info->chunkEdgeData[p][sp][ii*2] = ENDFLAG; // GS will not process this edge, just for alignment;
+                        info->chunkEdgeData[p][sp][ii*2 + 1] = vertex_index_end - 1;
+                    } else {
+                        info->chunkEdgeData[p][sp][ii*2] = (*it).first; // source vertex
+                        info->chunkEdgeData[p][sp][ii*2 + 1] = (*it).second; // dest vertex
 
-    for (int i = 0; i < info->blkNum; i ++) {
-        partitionDescriptor * partition = getPartition(i);
-        for (int k = 0; k < SUB_PARTITION_NUM; k++ )
-        {
-            partition->sub[k] = getSubPartition(i * SUB_PARTITION_NUM + k);
-        }
-    }
+                        max = (info->cia[i] > max) ? info->cia[i] : max;
+                        min = (info->cia[i] > min) ? min : info->cia[i];
 
-    for (int i = 0; i < info->blkNum; i ++) {
-        partitionDescriptor * partition = getPartition(i);
-
-        /****************************************************************************************************************/
-
-        /****************************************************************************************************************/
-        uint cur_edge_num = 0;
-        int *edgePartitionTailArray    = (int*)get_host_mem_pointer(MEM_ID_EDGE_TAIL);
-        int *edgePartitionHeadArray    = (int*)get_host_mem_pointer(MEM_ID_EDGE_HEAD);
-        prop_t *edgePartitionPropArray = (prop_t*)get_host_mem_pointer(MEM_ID_PARTITON_EDGE_PROP);
-        prop_t *edgeProp               = (prop_t*)get_host_mem_pointer(MEM_ID_EDGE_PROP);
-        mapedSourceIndex = 0;
-
-        for (int u = 0; u < vertexNum; u++) {
-            int start = rpa[u];
-            int num = rpa[u + 1] - rpa[u];
-            for (int j = 0; j < num; j++) {
-                //tmpVertexProp[cia[start + j]] += vertexPushinProp[u];//vertexProp[u] / (csr->rpao[u+1] - csr->rpao[u]);
-                int cia_idx = start + j; //printf("cia_idx %d\n",cia_idx );
-                int vertex_idx = vertexMap[cia[cia_idx]];
-                if ((vertex_idx >= i * MAX_VERTICES_IN_ONE_PARTITION) && (vertex_idx < (i + 1) * MAX_VERTICES_IN_ONE_PARTITION)) {
-                    edgePartitionTailArray[cur_edge_num] = vertex_idx;
-                    edgePartitionHeadArray[cur_edge_num] = mapedSourceIndex;
-                    edgePartitionPropArray[cur_edge_num] = edgeProp[cia_idx];
-                    cur_edge_num ++;
+                        i++;
+                        it++;
+                    }
                 }
-            }
-            if (num != 0)
-            {
-                mapedSourceIndex ++;
+                info->chunkProp[p][sp].srcVertexNumChunk = max - min;
             }
         }
+        std::cout << " Partition " << p << " process done" <<std::endl; 
+    }
 
+    // for (int p = 0; p < info->partitionNum; p++) {
+    //     for (int sp = 0; sp < SUB_PARTITION_NUM; sp++) {
+    //         for (int ii = 0; ii < info->chunkProp[p][sp].edgeNumChunk * 2; ii++) {
+    //             std::cout << "["<<p<<"]["<<sp<<"]["<<ii<<"]:"<<info->chunkEdgeData[p][sp][ii]<<" ";
+    //             if (ii % 50 == 0) std::cout<<std::endl;
+    //         }
+    //     }
+        
+    // }
 
-        DEBUG_PRINTF("\nunpad edge_tuple_range %d\n", cur_edge_num);
-
-
-        int unpad_edge_num = cur_edge_num;
-        //align at 4k
-
-        for (int k = 0; k < (ALIGN_SIZE - (unpad_edge_num % ALIGN_SIZE)); k ++) {
-            edgePartitionTailArray[cur_edge_num] = (ENDFLAG - 1);
-            edgePartitionHeadArray[cur_edge_num] = edgePartitionHeadArray[cur_edge_num - 1];
-            edgePartitionPropArray[cur_edge_num] = 0;
-            cur_edge_num ++;
-        }
-        partition->totalEdge = cur_edge_num;
-
-
-        for (int subIndex = 0 ; subIndex < SUB_PARTITION_NUM ; subIndex ++ )
-        {
-            partition->sub[subIndex]->compressRatio = (double (mapedSourceIndex)) / vertexNum;
-            DEBUG_PRINTF("ratio %d / %d is %lf \n", mapedSourceIndex, vertexNum, partition->sub[subIndex]->compressRatio);
-            partition->sub[subIndex]->dstVertexStart = MAX_VERTICES_IN_ONE_PARTITION * (i);
-            partition->sub[subIndex]->dstVertexEnd   = (((unsigned int)(MAX_VERTICES_IN_ONE_PARTITION * (i + 1)) > mapedSourceIndex) ? mapedSourceIndex : MAX_VERTICES_IN_ONE_PARTITION * (i + 1)) - 1;
-            volatile int subPartitionSize = ((partition->totalEdge / SUB_PARTITION_NUM) / ALIGN_SIZE) * ALIGN_SIZE; //3998 10 4 = 396
-            partition->subPartitionSize = subPartitionSize;
-            partition->sub[subIndex]->srcVertexStart =  edgePartitionHeadArray[subPartitionSize * subIndex];
-            partition->sub[subIndex]->srcVertexEnd   =  edgePartitionHeadArray[subPartitionSize * (subIndex + 1) - 1];
-        }
-        schedulerSubPartitionArrangement(i);
-
-        for (int subIndex = 0 ; subIndex < SUB_PARTITION_NUM ; subIndex ++ )
-        {
-            int partId = i * SUB_PARTITION_NUM + subIndex;
-            int subPartitionSize = partition->subPartitionSize;
-            int reOrderIndex = partition->finalOrder[subIndex];
-
-            unsigned int bound = subPartitionSize * (reOrderIndex + 1) + SUB_PARTITION_NUM * ALIGN_SIZE; 
-
-            partition->sub[subIndex]->listStart =  0; 
-            partition->sub[subIndex]->listEnd = (bound > partition->totalEdge && reOrderIndex == (SUB_PARTITION_NUM - 1)) ? (partition->totalEdge - (subPartitionSize * reOrderIndex)) : (subPartitionSize);
-            partition->sub[subIndex]->mapedTotalIndex = mapedSourceIndex;
-            partition->sub[subIndex]->srcVertexStart =  edgePartitionHeadArray[subPartitionSize * reOrderIndex];
-            partition->sub[subIndex]->srcVertexEnd   =  edgePartitionHeadArray[subPartitionSize * (reOrderIndex + 1) - 1];
-
-            DEBUG_PRINTF("[SIZE] %d cur_edge_num sub %d\n", partition->totalEdge, partition->sub[subIndex]->listEnd);
-            
-            partition_mem_init(acc->context, partId, partition->sub[subIndex]->listEnd, subIndex); // subIndex --> cuIndex
-            
-            memcpy(partition->sub[subIndex]->edgeTail.data , &edgePartitionTailArray[subPartitionSize * reOrderIndex],
-               partition->sub[subIndex]->listEnd * sizeof(int));
-            memcpy(partition->sub[subIndex]->edgeHead.data , &edgePartitionHeadArray[subPartitionSize * reOrderIndex], 
-                partition->sub[subIndex]->listEnd * sizeof(int));
-
-            int * pointer_edgeHeadData = (int *)(partition->sub[subIndex]->edgeHead.data);
-
-            for (uint i = 0; i < partition->sub[subIndex]->listEnd; i ++)
-            {
-                pointer_edgeHeadData[2 * i] = edgePartitionHeadArray[subPartitionSize * reOrderIndex + i];
-                pointer_edgeHeadData[2 * i + 1] = edgePartitionTailArray[subPartitionSize * reOrderIndex + i];
-            }
-            
-            memcpy(partition->sub[subIndex]->edgeProp.data , &edgePartitionPropArray[subPartitionSize * reOrderIndex],
-                partition->sub[subIndex]->listEnd * sizeof(int));
+    for (int sp = 0; sp < SUB_PARTITION_NUM; sp++) {
+        for (int i = 0; i < info->alignedCompressedVertexNum; i++) {
+            std::cout << "[" << i <<"] "<< info->chunkPropData[sp][i] << " ";
+            if ((i+1) % 10 == 0) std::cout<<std::endl;
         }
     }
 
-#define CACHE_UNIT_SIZE (4096 * 2)
-
-
-    schedulerPartitionArrangement(info->blkNum);
-
-
-    for (int i = 0; i < info->blkNum; i++)
-    {
-        subPartitionDescriptor * subPartition = getSubPartition(i);
-        int *edgePartitionHeadArray = (int*)subPartition->edgeHead.data;
-
-        DEBUG_PRINTF("\n----------------------------------------------------------------------------------\n");
-        DEBUG_PRINTF("[PART] subPartitions %d info :\n", i);
-        DEBUG_PRINTF("[PART] \t edgelist from %d to %d\n"   , subPartition->listStart      , subPartition->listEnd     );
-        DEBUG_PRINTF("[PART] \t dst. vertex from %d to %d\n", subPartition->dstVertexStart , subPartition->dstVertexEnd);
-        DEBUG_PRINTF("[PART] \t src. vertex from %d to %d\n", subPartition->srcVertexStart , subPartition->srcVertexEnd);
-        DEBUG_PRINTF("[PART] \t dump: %d - %d\n", (edgePartitionHeadArray[subPartition->listStart]), (edgePartitionHeadArray[subPartition->listEnd - 1]));
-        DEBUG_PRINTF("[PART] scatter cache ratio %lf \n", subPartition->scatterCacheRatio);
-        DEBUG_PRINTF("[PART] v/e %lf \n", (subPartition->dstVertexEnd - subPartition->dstVertexStart)
-                     / ((float)(subPartition->listEnd - subPartition->listStart)));
-
-        DEBUG_PRINTF("[PART] v: %d e: %d \n", (subPartition->dstVertexEnd - subPartition->dstVertexStart),
-                     (subPartition->listEnd - subPartition->listStart));
-
-        DEBUG_PRINTF("[PART] est. efficient %lf\n", ((float)(subPartition->listEnd - subPartition->listStart)) / mapedSourceIndex);
-
-        DEBUG_PRINTF("[PART] compressRatio %lf \n\n", subPartition->compressRatio);
-
-
-        /****************************************************************************************************************/
-
-        /****************************************************************************************************************/
-
-    }
-
-
-    for (int i = 0; i < info->blkNum; i++)
-    {
-        DEBUG_PRINTF("[SCHE] %d with %d @ %d \n", getArrangedPartitionID(i), getPartition(getArrangedPartitionID(i))->totalEdge, i);
-    }
-
-    int paddingVertexNum  = ((vertexNum  - 1) / (ALIGN_SIZE * 4) + 1 ) * (ALIGN_SIZE * 4);
-    int *tmpVertexProp =  (int*)get_host_mem_pointer(MEM_ID_TMP_VERTEX_PROP);
-    for (int i = vertexNum; i < paddingVertexNum; i++)
-    {
-        tmpVertexProp[i] = 0;
-    }
-    partitionTransfer(info);
+    std::cout << " Partition function finish" << std::endl;
 }
 
 int acceleratorDataPreprocess(graphInfo *info)
 {
-    schedulerRegister();
+    // schedulerRegister();
     dataPrepareProperty(info);
     partitionFunction(info);
     return 0;

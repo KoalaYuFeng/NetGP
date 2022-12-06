@@ -12,6 +12,11 @@
 #include <map>
 #include <algorithm>
 
+// XRT includes
+#include "experimental/xrt_bo.h"
+#include "experimental/xrt_device.h"
+#include "experimental/xrt_kernel.h"
+
 #define HERE do {std::cout << "File: " << __FILE__ << " Line: " << __LINE__ << std::endl;} while(0)
 
 class Vertex {

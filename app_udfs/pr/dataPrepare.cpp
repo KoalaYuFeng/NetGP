@@ -1,7 +1,7 @@
 #include "host_graph_api.h"
 #include "fpga_application.h"
 
-#define INT2FLOAT                   (pow(2,30))
+#define INT2FLOAT                   (pow(2,20))
 
 int float2int(float a) {
     return (int)(a * INT2FLOAT);
@@ -18,31 +18,24 @@ unsigned int dataPrepareGetArg(graphInfo *info)
 
 int dataPrepareProperty(graphInfo *info)
 {
-    int *tempPropValue   =  (int*)get_host_mem_pointer(MEM_ID_PROP_FOR_DATAPREPARE);
-    int *outDeg          =  (int*)get_host_mem_pointer(MEM_ID_OUT_DEG_ORIGIN);
-    prop_t *vertexPushinProp = (prop_t*)get_host_mem_pointer(MEM_ID_PUSHIN_PROP);
-
-    int vertexNum = info->vertexNum;
-    int alignedVertexNum = get_he_mem(MEM_ID_PUSHIN_PROP)->size/sizeof(int);
-
-    float init_score_float = 1.0f / vertexNum;
+    float init_score_float = 1.0f / (info->vertexNum);
     int init_score_int = float2int(init_score_float);
 
-
-    for (int i = 0; i < vertexNum; i++) {
-        tempPropValue[i] = init_score_int;
-        if (outDeg[i] > 0)
-        {
-            vertexPushinProp[i] =  tempPropValue[i] / outDeg[i];
-        }
-        else
-        {
-            vertexPushinProp[i]  = 0;
+    for (int sp = 0; sp < SUB_PARTITION_NUM; sp++) {
+        for (int i = 0; i < info->alignedCompressedVertexNum; i++) {
+            if (i >= info->compressedVertexNum) {
+                info->chunkPropData[sp][i] = 0;
+            } else {
+                info->chunkPropData[sp][i] = init_score_int / info->outDeg[i];
+            }
         }
     }
 
-    for (int i = vertexNum; i < alignedVertexNum; i++) {
-        vertexPushinProp[i]  = 0;
-    }
+    // for (int i = 0; i < info->vertexNum; i++) {
+    //     std::cout << "[" <<i<<"]:" <<info->vertexPushinProp[i]<<" ";
+    //     if ( i % 50 == 0) std::cout << std::endl;
+    // }
+
+    std::cout << " data prepare property done " << std::endl;
     return 0;
 }

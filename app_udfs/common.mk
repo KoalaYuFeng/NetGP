@@ -41,6 +41,8 @@ else
 	HOST_SRCS +=  $(APPCONFIG)/main.cpp
 endif
 
+HOST_SRCS += ./common/includes/cmdparser/cmdlineparser.cpp
+HOST_SRCS += ./common/includes/logger/logger.cpp
 HOST_SRCS += ./libgraph/memory/he_mem.cpp
 HOST_SRCS += ./libgraph/memory/he_mapping.cpp
 HOST_SRCS += ./libgraph/misc/host_graph_mem.cpp
@@ -81,10 +83,13 @@ CXXFLAGS += -I $(APPCONFIG)
 CXXFLAGS += -I ./app_udfs
 # CXXFLAGS += -I acc_para
 CXXFLAGS += -I acc_top
+CXXFLAGS += -I ./common/includes/cmdparser
+CXXFLAGS += -I ./common/includes/logger
 
 # Host linker flags
 LDFLAGS := $(opencl_LDFLAGS)
 LDFLAGS += -lrt -lstdc++  -lxilinxopencl
+LDFLAGS += -luuid -lxrt_coreutil
 
 
 CLFLAGS := $(AUTOGEN_CFLAG)

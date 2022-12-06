@@ -1,11 +1,17 @@
+#include "cmdlineparser.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
 #include <fstream>
+#include <chrono>
 
 #include "host_graph_api.h"
 #include "host_graph_verification.h"
 
+// XRT includes
+#include "experimental/xrt_bo.h"
+#include "experimental/xrt_device.h"
+#include "experimental/xrt_kernel.h"
 
 using namespace std;
 
@@ -13,48 +19,66 @@ graphInfo graphDataInfo;
 
 int main(int argc, char **argv) {
 
-    char * xcl_file = NULL;
-    if (argc > 1)
-    {
-        xcl_file = argv[1];
-    }
+    sda::utils::CmdLineParser parser;
 
-    std::string gName;
-    if (argc > 2)
-    {
-        gName = argv[2];
-    }
-    else
-    {
-        gName = "rmat-12-4";
-    }
-    std::string path_graph_dataset = "/home/xinyuc/graph_dataset/";
+    parser.addSwitch("--xclbin_file", "-x", "input binary file string", "");
+    parser.addSwitch("--dataset", "-d", "dataset name", "HW"); // using HW dataset as default
+    parser.parse(argc, argv);
 
-    DEBUG_PRINTF("start main\n");
+    // Read settings
+    std::string binary_file = parser.value("xclbin_file");
+    std::string g_name = parser.value("dataset");
+    std::string path_graph_dataset = "/data/yufeng/graph_dataset/";
+    std::cout << "start main" << std::endl;
 
-    acceleratorInit("graph_fpga", xcl_file);
+    // load graph
+    acceleratorDataLoad(g_name, path_graph_dataset, &graphDataInfo);
+    
+    // init accelerator
+    acceleratorInit(binary_file, &graphDataInfo); // init kernel , init buffer , map host and device memory
 
-    acceleratorDataLoad(gName, path_graph_dataset, &graphDataInfo); // it contains heterogeneous memory allocation
+    // graph data pre-process
+    acceleratorDataPreprocess(&graphDataInfo); // data prepare + data partition
+    // acceleratorCModelDataPreprocess(&graphDataInfo); // cmodel data preprocess, for verification
 
-    acceleratorDataPreprocess(&graphDataInfo);
-    /* for verification */
-    acceleratorCModelDataPreprocess(&graphDataInfo);
+    // transfer host data to FPGA side
+    partitionTransfer(&graphDataInfo);
 
-    for (int runCounter = 0 ; runCounter < 10 ; runCounter ++)
-    {
-        double startStamp, endStamp;
-        startStamp = getCurrentTimestamp();
+    // super step execution : set args and kernel run 
 
-        acceleratorSuperStep(runCounter, &graphDataInfo);
+    int super_step_num = 10;
+    auto start = chrono::steady_clock::now();
 
-        endStamp = getCurrentTimestamp();
+    for (int run_counter = 0 ; run_counter < super_step_num ; run_counter++) {
+        acceleratorSuperStep(run_counter, &graphDataInfo);
+        // std::cout << "super step " << run_counter << " execution done!" << std::endl;
         /* for verification */
-        acceleratorCModelSuperStep(runCounter, &graphDataInfo);
- 
-        /* for profile */
-        acceleratorProfile(runCounter, runCounter, &graphDataInfo, endStamp - startStamp);
+        // acceleratorCModelSuperStep(run_counter, &graphDataInfo);
     }
-    acceleratorDeinit();
+
+    auto end = chrono::steady_clock::now();
+
+    std::cout << "Graph elapses " << (chrono::duration_cast<chrono::microseconds>(end - start).count())/super_step_num<< "us" << std::endl; 
+
+    // transfer FPGA data to host side
+    resultTransfer(&graphDataInfo, super_step_num);
+
+    // release memory resource
+    int partition_num = graphDataInfo.partitionNum;
+
+    for (int j = 0; j < SUB_PARTITION_NUM; j++) {
+        for (int i = 0; i < partition_num; i++) {
+            delete[] graphDataInfo.chunkEdgeData[i][j];
+            std::cout << "edge data release finish" <<std::endl;
+        }
+        delete[] graphDataInfo.chunkTempData[j];
+        delete[] graphDataInfo.chunkPropData[j];
+        std::cout << "temp prop data release finish" <<std::endl;
+    }
+
+    delete[] graphDataInfo.chunkOutDegData;
+    delete[] graphDataInfo.chunkOutRegData;
+    std::cout << "outdeg and reg data release finish" <<std::endl;
 
     return 0;
 }

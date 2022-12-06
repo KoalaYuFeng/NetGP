@@ -1,106 +1,37 @@
 #ifndef __HOST_GRAPH_DATA_STRUCTURE_H__
 #define __HOST_GRAPH_DATA_STRUCTURE_H__
 
+#include <cstring>
+#include <vector>
 #include "graph.h"
+// XRT includes
+#include "experimental/xrt_bo.h"
+#include "experimental/xrt_device.h"
+#include "experimental/xrt_kernel.h"
 
 #define MAX_PARTITIONS_NUM      (128)
 
-
 typedef struct
 {
-    double fpgaExeTime;
-    double effic;
-    double compress;
-    double degree;
-} profileLog;
+    xrt::kernel gsKernel[SUB_PARTITION_NUM];
+    xrt::kernel applyKernel;
+    xrt::kernel mergeKernel[SUB_PARTITION_NUM];
+    xrt::kernel forwardKernel[SUB_PARTITION_NUM];
+    xrt::kernel readKernel[SUB_PARTITION_NUM];
+    xrt::kernel writeKernel[SUB_PARTITION_NUM];
 
-typedef struct
-{
-    unsigned int  listStart;
-    unsigned int  listEnd;
-    unsigned int  dstVertexStart;
-    unsigned int  dstVertexEnd;
-    unsigned int  srcVertexStart;
-    unsigned int  srcVertexEnd;
-    float         scatterCacheRatio;
-    float         compressRatio;
-    he_mem_t      edgeTail;
-    he_mem_t      edgeHead;
-    he_mem_t      edgeProp;
-    he_mem_t      tmpProp;
-    unsigned int  mapedTotalIndex;
-    unsigned int  cuIndex;
-    profileLog log;
-} subPartitionDescriptor;
+    xrt::run gsRun[SUB_PARTITION_NUM];
 
-typedef struct
-{
-    subPartitionDescriptor  *sub[SUB_PARTITION_NUM];
-    int                     finalOrder[SUB_PARTITION_NUM];
-    unsigned int            totalEdge;
-    unsigned int            subPartitionSize;
-    cl_event                syncEvent[SUB_PARTITION_NUM];
-    cl_event                applyEvent;
-    double                  applyExeTime;
-} partitionDescriptor;
+    std::vector<std::vector<xrt::bo>> edgeBuffer; // each subpartition owns one buffer
+    std::vector<xrt::bo> tempBuffer; // each subpartition owns one buffer
+    std::vector<xrt::bo> propBuffer; // each subpartition owns one buffer
 
-typedef struct
-{
-    const char* name;
-    int partition_mem_attr;
-    int prop_id;
-    int output_id;
-    cl_kernel kernel;
-    he_mem_t  prop[2];
-    he_mem_t  tmpProp;
-} gatherScatterDescriptor;
+    xrt::bo outDegBuffer; // each partition owns one buffer
+    xrt::bo outRegBuffer; // each partition owns one buffer
 
-typedef struct
-{
-    const char* name;
-    cl_kernel kernel;
-} applyDescriptor;
-
-typedef struct
-{
-    CSR* csr;
-
-    subPartitionDescriptor subPartitions[MAX_PARTITIONS_NUM * SUB_PARTITION_NUM];
-
-    partitionDescriptor partitions[MAX_PARTITIONS_NUM];
-
-    gatherScatterDescriptor * gsKernel[SUB_PARTITION_NUM];
-
-    applyDescriptor * applyKernel;
-
-    cl_command_queue gsOps[SUB_PARTITION_NUM];
-
-    cl_command_queue applyOps;
-
-    cl_program program;
-
-    cl_platform_id platform;
-
-    cl_device_id device;
-
-    cl_context context;
+    xrt::device graphDevice;
+    xrt::uuid graphUuid;
 
 } graphAccelerator;
-
-
-subPartitionDescriptor * getSubPartition(int partID);
-partitionDescriptor * getPartition(int partID);
-
-gatherScatterDescriptor * getGatherScatter(int kernelID);
-applyDescriptor * getApply(void);
-
-graphAccelerator * getAccelerator(void);
-
-
-// inline int getCuIDbyInterface(int order)
-// {
-//     return he_get_interface_id(order);
-// }
-
 
 #endif /* __HOST_GRAPH_DATA_STRUCTURE_H__ */
