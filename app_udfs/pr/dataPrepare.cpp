@@ -1,7 +1,7 @@
 #include "host_graph_api.h"
 #include "fpga_application.h"
 
-#define INT2FLOAT                   (pow(2,20))
+#define INT2FLOAT                   (pow(2,30))
 
 int float2int(float a) {
     return (int)(a * INT2FLOAT);

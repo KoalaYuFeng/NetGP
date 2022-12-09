@@ -6,6 +6,7 @@
 
 #include "common.h"
 #include "global_config.h"
+#include "host_graph_data_structure.h"
 
 typedef struct
 {
@@ -26,6 +27,8 @@ typedef struct
     std::vector<int> vertexMapping; // vertex mapping function, (compressed -> original)
     std::vector<int> outDegZeroIndex; // store vertex index whose ourDeg = 0;
 
+    std::vector<int> destIndexList; // used in partition function for time optimization;
+
     std::vector<int> rpa; // row point array after compression
     std::vector<int> cia; // column index array after compression
 
@@ -45,14 +48,14 @@ unsigned int dataPrepareGetArg(graphInfo *info);
 int dataPrepareProperty(graphInfo *info);
 double getCurrentTimestamp(void);
 void reTransferProp(graphInfo *info);
-void partitionTransfer(graphInfo *info);
-void resultTransfer(graphInfo *info, int);
+void partitionTransfer(graphInfo *info, graphAccelerator *acc);
+void resultTransfer(graphInfo *info, graphAccelerator *acc, int);
 
 /* host api -- dataflow */
-int acceleratorInit(std::string& file_name, graphInfo *info);
+int acceleratorInit(std::string& file_name, graphInfo *info, graphAccelerator *acc);
 int acceleratorDataLoad(const std::string &gName, const std::string &mode, graphInfo *info);
 int acceleratorDataPreprocess(graphInfo *info);
-int acceleratorSuperStep(int superStep, graphInfo *info);
+int acceleratorSuperStep(int superStep, graphInfo *info, graphAccelerator *acc);
 int acceleratorDeinit(void);
 
 /* host api -- query */

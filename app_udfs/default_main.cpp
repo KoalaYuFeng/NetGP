@@ -17,6 +17,8 @@ using namespace std;
 
 graphInfo graphDataInfo;
 
+graphAccelerator thunderGraph;
+
 int main(int argc, char **argv) {
 
     sda::utils::CmdLineParser parser;
@@ -35,22 +37,22 @@ int main(int argc, char **argv) {
     acceleratorDataLoad(g_name, path_graph_dataset, &graphDataInfo);
     
     // init accelerator
-    acceleratorInit(binary_file, &graphDataInfo); // init kernel , init buffer , map host and device memory
+    acceleratorInit(binary_file, &graphDataInfo, &thunderGraph); // init kernel , init buffer , map host and device memory
 
     // graph data pre-process
     acceleratorDataPreprocess(&graphDataInfo); // data prepare + data partition
     // acceleratorCModelDataPreprocess(&graphDataInfo); // cmodel data preprocess, for verification
 
     // transfer host data to FPGA side
-    partitionTransfer(&graphDataInfo);
+    partitionTransfer(&graphDataInfo, &thunderGraph);
 
     // super step execution : set args and kernel run 
 
-    int super_step_num = 10;
+    int super_step_num = 1;
     auto start = chrono::steady_clock::now();
 
     for (int run_counter = 0 ; run_counter < super_step_num ; run_counter++) {
-        acceleratorSuperStep(run_counter, &graphDataInfo);
+        acceleratorSuperStep(run_counter, &graphDataInfo, &thunderGraph);
         // std::cout << "super step " << run_counter << " execution done!" << std::endl;
         /* for verification */
         // acceleratorCModelSuperStep(run_counter, &graphDataInfo);
@@ -61,7 +63,7 @@ int main(int argc, char **argv) {
     std::cout << "Graph elapses " << (chrono::duration_cast<chrono::microseconds>(end - start).count())/super_step_num<< "us" << std::endl; 
 
     // transfer FPGA data to host side
-    resultTransfer(&graphDataInfo, super_step_num);
+    resultTransfer(&graphDataInfo, &thunderGraph, super_step_num);
 
     // release memory resource
     int partition_num = graphDataInfo.partitionNum;

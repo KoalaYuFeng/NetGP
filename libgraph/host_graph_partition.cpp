@@ -26,7 +26,10 @@ int acceleratorDataLoad(const std::string &gName, const std::string &mode, graph
     // compress function : delete vertics whose OutDeg = 0;
     int num_mapped = 0;
     int num_deleted = 0;
+
+    int* mapping_vertex_array = new int[vertex_num];
     for (int i = 0; i < vertex_num; i++) {
+        mapping_vertex_array[i] = num_mapped;
         int outdeg_tmp = csr->rpao[i + 1] - csr->rpao[i];
         if (outdeg_tmp > 0) {
             info->outDeg.push_back(outdeg_tmp);
@@ -57,8 +60,10 @@ int acceleratorDataLoad(const std::string &gName, const std::string &mode, graph
         int in_deg_tmp = csr->rpai[info->vertexMapping[j]+1] - csr->rpai[info->vertexMapping[j]];
         info->rpa[j+1] = info->rpa[j] + in_deg_tmp;
         int bias = csr->rpai[info->vertexMapping[j]];
+        int tmp_cia = 0;
         for (int k = 0; k < in_deg_tmp; k++) {
-            info->cia.push_back(csr->ciai[bias + k]);
+            info->cia.push_back(mapping_vertex_array[csr->ciai[bias + k]]);
+            info->destIndexList.push_back(j); // for time optimization in partition function.
             num_compress_edge++;
         }
     }
@@ -114,6 +119,7 @@ int acceleratorDataLoad(const std::string &gName, const std::string &mode, graph
         std::cout << " Edge number: partion "<< edge_num_tmp * num_subpartition << " subpartion "<< edge_num_tmp << std::endl;
     }
 
+    delete [] mapping_vertex_array;
     return 0;
 }
 
@@ -167,11 +173,7 @@ void partitionFunction(graphInfo *info)
         std::cout << "Partition "<< p <<" start index "<< vertex_index_start << " end index "<< vertex_index_end << std::endl;
 
         for (int i = info->rpa[vertex_index_start]; i < info->rpa[vertex_index_end]; i++) {
-            int dest_index = vertex_index_start;
-            while (i >= info->rpa[dest_index + 1]) {
-                dest_index++;
-            }
-            edge_list[p].insert(std::pair<int, int>(info->cia[i], dest_index));
+            edge_list[p].insert(std::pair<int, int>(info->cia[i], info->destIndexList[i]));
         }
 
         for (int i = info->rpa[vertex_index_start]; i < info->rpa[vertex_index_end];) {
@@ -181,8 +183,9 @@ void partitionFunction(graphInfo *info)
                 int min = 0;
                 for (int ii = 0; ii < info->chunkProp[p][sp].edgeNumChunk; ii++) {
                     if (info->rpa[vertex_index_end] <= (sp*info->chunkProp[p][sp].edgeNumChunk + ii + info->rpa[vertex_index_start])) {
-                        info->chunkEdgeData[p][sp][ii*2] = ENDFLAG; // GS will not process this edge, just for alignment;
-                        info->chunkEdgeData[p][sp][ii*2 + 1] = vertex_index_end - 1;
+                        // info->chunkEdgeData[p][sp][ii*2] = ENDFLAG - 1; // GS will not process this edge, just for alignment;
+                        info->chunkEdgeData[p][sp][ii*2] = info->compressedVertexNum - 1;
+                        info->chunkEdgeData[p][sp][ii*2 + 1] = info->compressedVertexNum - 2;
                     } else {
                         info->chunkEdgeData[p][sp][ii*2] = (*it).first; // source vertex
                         info->chunkEdgeData[p][sp][ii*2 + 1] = (*it).second; // dest vertex
@@ -200,22 +203,28 @@ void partitionFunction(graphInfo *info)
         std::cout << " Partition " << p << " process done" <<std::endl; 
     }
 
-    // for (int p = 0; p < info->partitionNum; p++) {
-    //     for (int sp = 0; sp < SUB_PARTITION_NUM; sp++) {
-    //         for (int ii = 0; ii < info->chunkProp[p][sp].edgeNumChunk * 2; ii++) {
-    //             std::cout << "["<<p<<"]["<<sp<<"]["<<ii<<"]:"<<info->chunkEdgeData[p][sp][ii]<<" ";
-    //             if (ii % 50 == 0) std::cout<<std::endl;
-    //         }
-    //     }
-        
-    // }
-
-    for (int sp = 0; sp < SUB_PARTITION_NUM; sp++) {
-        for (int i = 0; i < info->alignedCompressedVertexNum; i++) {
-            std::cout << "[" << i <<"] "<< info->chunkPropData[sp][i] << " ";
-            if ((i+1) % 10 == 0) std::cout<<std::endl;
+    // ===============  Print information  ================
+    for (int p = 0; p < info->partitionNum; p++) {
+        for (int sp = 0; sp < SUB_PARTITION_NUM; sp++) {
+            for (int ii = 0; ii < info->chunkProp[p][sp].edgeNumChunk * 2; ii++) {
+                if ((ii % 2 == 1) && (info->chunkEdgeData[p][sp][ii] == 5428)) {
+                    std::cout << "edge :"<< info->chunkEdgeData[p][sp][ii - 1] <<" "<< info->chunkEdgeData[p][sp][ii]<<" ";
+                    std::cout << "prop :"<< info->chunkPropData[sp][info->chunkEdgeData[p][sp][ii - 1]];
+                    std::cout << std::endl;
+                }
+                // std::cout << "["<<p<<"]["<<sp<<"]["<<ii<<"]:"<<info->chunkEdgeData[p][sp][ii]<<" ";
+                // if ((ii + 1) % 2 == 0) std::cout<<std::endl;
+            }
         }
+        
     }
+
+    // for (int sp = 0; sp < SUB_PARTITION_NUM; sp++) {
+    //     for (int i = 0; i < info->alignedCompressedVertexNum; i++) {
+    //         std::cout << "[" << i <<"] "<< info->chunkPropData[sp][i] << " ";
+    //         if ((i+1) % 10 == 0) std::cout<<std::endl;
+    //     }
+    // }
 
     std::cout << " Partition function finish" << std::endl;
 }

@@ -52,8 +52,8 @@ Graph* createGraph(const std::string &gName, const std::string &mode) {
         gptr = new Graph("/data/graph_dataset/rmat-19-32.txt");
     }
     else {
-        gptr = new Graph("/data/graph_dataset/rmat-12-4.txt");
-        std::cout << "load /data/graph_dataset/rmat-12-4.txt .." << std::endl;
+        gptr = new Graph("/data/graph_dataset/rmat-14-8.txt");
+        std::cout << "load /data/graph_dataset/rmat-14-8.txt .." << std::endl;
     }
     return gptr;
 }
