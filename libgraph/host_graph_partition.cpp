@@ -60,7 +60,6 @@ int acceleratorDataLoad(const std::string &gName, const std::string &mode, graph
         int in_deg_tmp = csr->rpai[info->vertexMapping[j]+1] - csr->rpai[info->vertexMapping[j]];
         info->rpa[j+1] = info->rpa[j] + in_deg_tmp;
         int bias = csr->rpai[info->vertexMapping[j]];
-        int tmp_cia = 0;
         for (int k = 0; k < in_deg_tmp; k++) {
             info->cia.push_back(mapping_vertex_array[csr->ciai[bias + k]]);
             info->destIndexList.push_back(j); // for time optimization in partition function.
@@ -207,7 +206,7 @@ void partitionFunction(graphInfo *info)
     for (int p = 0; p < info->partitionNum; p++) {
         for (int sp = 0; sp < SUB_PARTITION_NUM; sp++) {
             for (int ii = 0; ii < info->chunkProp[p][sp].edgeNumChunk * 2; ii++) {
-                if ((ii % 2 == 1) && (info->chunkEdgeData[p][sp][ii] == 5428)) {
+                if ((ii % 2 == 1) && (info->chunkEdgeData[p][sp][ii] == 78675)) {
                     std::cout << "edge :"<< info->chunkEdgeData[p][sp][ii - 1] <<" "<< info->chunkEdgeData[p][sp][ii]<<" ";
                     std::cout << "prop :"<< info->chunkPropData[sp][info->chunkEdgeData[p][sp][ii - 1]];
                     std::cout << std::endl;

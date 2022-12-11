@@ -103,7 +103,7 @@ int acceleratorSuperStep(int superStep, graphInfo *info, graphAccelerator * acc)
             acc->gsRun[j].set_arg(narg++, 0);
             // acc->gsRun[j].set_arg(narg++, DATA_SIZE);
             acc->gsRun[j].set_arg(narg++, info->alignedCompressedVertexNum);
-            acc->edgeBuffer[i][j].sync(XCL_BO_SYNC_BO_TO_DEVICE); // try to copy data into device memory. map function seems a problem
+            // acc->edgeBuffer[i][j].sync(XCL_BO_SYNC_BO_TO_DEVICE); // try to copy data into device memory. map function seems a problem
             acc->gsRun[j].start();
         }
 

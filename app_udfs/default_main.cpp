@@ -30,7 +30,7 @@ int main(int argc, char **argv) {
     // Read settings
     std::string binary_file = parser.value("xclbin_file");
     std::string g_name = parser.value("dataset");
-    std::string path_graph_dataset = "/data/yufeng/graph_dataset/";
+    std::string path_graph_dataset = "/data/graph_dataset/";
     std::cout << "start main" << std::endl;
 
     // load graph
