@@ -35,8 +35,8 @@ typedef struct
     int partitionNum; // partition number;
     std::vector<std::vector<chunkInfo>> chunkProp; // partition -> subpartition -> prop
     std::vector<std::vector<int*>> chunkEdgeData; // partition -> subpartition -> edgelist;
-    std::vector<int*> chunkTempData; // temp data, each subpartition owns whole vertices.
-    std::vector<int*> chunkPropData; // prop data, same as temp data.
+    int* chunkTempData[SUB_PARTITION_NUM]; // temp data, each subpartition owns whole vertices.
+    int* chunkPropData[SUB_PARTITION_NUM]; // prop data, same as temp data.
 
     int* chunkOutDegData;
     int* chunkOutRegData;

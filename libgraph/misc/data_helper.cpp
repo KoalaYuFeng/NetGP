@@ -64,8 +64,8 @@ Graph* createGraph(const std::string &gName, const std::string &mode) {
         gptr = new Graph(dir + "wikipedia-20070206.mtx");
     }
     else {
-        gptr = new Graph("/data/graph_dataset/rmat-14-8.txt");
-        std::cout << "load /data/graph_dataset/rmat-14-8.txt as default ..." << std::endl;
+        gptr = new Graph("/data/graph_dataset/rmat-19-2.txt");
+        std::cout << "load /data/graph_dataset/rmat-19-2.txt as default ..." << std::endl;
     }
     return gptr;
 }

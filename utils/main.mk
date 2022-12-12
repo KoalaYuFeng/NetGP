@@ -34,7 +34,8 @@ include ./app_udfs/common.mk
 ## include acc_top/gs_kernel.mk
 ## include acc_top/apply_kernel.mk
 
-## enable multi kernels
+## enable multi kernels, add gs kernel
+include acc_top/gs_kernel.mk
 include acc_top/apply_multi_kernel.mk
 include acc_top/merge_multi_kernel.mk
 include acc_top/forward_multi_kernel.mk

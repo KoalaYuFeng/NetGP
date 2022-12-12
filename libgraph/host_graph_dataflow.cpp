@@ -52,8 +52,8 @@ int acceleratorInit(std::string& file_name,  graphInfo *info, graphAccelerator* 
     // // acc->outDegBuffer.resize(info->partitionNum);
     // // acc->outRegBuffer.resize(info->partitionNum);
 
-    acc->propBuffer.resize(SUB_PARTITION_NUM);
-    acc->tempBuffer.resize(SUB_PARTITION_NUM);
+    // acc->propBuffer.resize(SUB_PARTITION_NUM);
+    // acc->tempBuffer.resize(SUB_PARTITION_NUM);
     acc->edgeBuffer.resize(info->partitionNum);
     std::cout << "acc edge buffer number = "<< acc->edgeBuffer.size() << std::endl;
 
@@ -66,8 +66,8 @@ int acceleratorInit(std::string& file_name,  graphInfo *info, graphAccelerator* 
             info->chunkEdgeData[i][j] = acc->edgeBuffer[i][j].map<int*>();
 
             prop_size_bytes = info->alignedCompressedVertexNum * sizeof(prop_t); // vertex prop;
-            acc->propBuffer[j] = xrt::bo(acc->graphDevice, prop_size_bytes, acc->gsKernel[j].group_id(0));
-            acc->tempBuffer[j] = xrt::bo(acc->graphDevice, prop_size_bytes, acc->gsKernel[j].group_id(0));
+            acc->propBuffer[j] = xrt::bo(acc->graphDevice, prop_size_bytes, acc->gsKernel[j].group_id(1));
+            acc->tempBuffer[j] = xrt::bo(acc->graphDevice, prop_size_bytes, acc->gsKernel[j].group_id(1));
             info->chunkTempData[j] = acc->tempBuffer[j].map<int*>();
             info->chunkPropData[j] = acc->propBuffer[j].map<int*>();
         }
@@ -86,6 +86,7 @@ int acceleratorInit(std::string& file_name,  graphInfo *info, graphAccelerator* 
 int acceleratorSuperStep(int superStep, graphInfo *info, graphAccelerator * acc)
 {
     for (int i = 0; i < info->partitionNum; i++) {
+    // for (int i = 0; i < 1; i++) {
         std::cout << "gs kernel start, partition [" << i << "]" <<std::endl;
         for (int j = 0; j < SUB_PARTITION_NUM; j++) {
             int narg = 0;
@@ -109,6 +110,16 @@ int acceleratorSuperStep(int superStep, graphInfo *info, graphAccelerator * acc)
 
         for (int k = 0; k < SUB_PARTITION_NUM; k++) {
             acc->gsRun[k].wait();
+
+            // std::cout << "gs kernel run end, partition [" << k << "]" <<std::endl;
+
+            // acc->tempBuffer[k].sync(XCL_BO_SYNC_BO_FROM_DEVICE);
+            // acc->propBuffer[k].sync(XCL_BO_SYNC_BO_FROM_DEVICE);
+            // for (int size = 0; size < info->alignedCompressedVertexNum; size++) {
+            //     std::cout <<" ["<< k << "]["<< size << "]:" << info->chunkTempData[k][size];
+            //     if ((size + 1) % 5 == 0) std::cout << std::endl;
+            // }
+
         }
 
         std::cout << "gs kernel end, partition [" << i << "]" <<std::endl;
@@ -141,7 +152,9 @@ void partitionTransfer(graphInfo *info, graphAccelerator * acc)
     // Synchronize buffer content with device side
     for (int i = 0; i < info->partitionNum; i++) {
         for (int j = 0; j < SUB_PARTITION_NUM; j++) {
+            // acc->propBuffer[j].write(info->chunkPropData[j]);
             acc->propBuffer[j].sync(XCL_BO_SYNC_BO_TO_DEVICE);
+            acc->tempBuffer[j].sync(XCL_BO_SYNC_BO_TO_DEVICE);
             acc->edgeBuffer[i][j].sync(XCL_BO_SYNC_BO_TO_DEVICE);
         }
     }
@@ -155,12 +168,15 @@ void resultTransfer(graphInfo *info, graphAccelerator * acc, int run_counter)
     for (int sp = 0; sp < SUB_PARTITION_NUM; sp++) {
 
         if (run_counter % 2 == 1) { // ping-pong for temp data and prop data;
+            std::fill_n(info->chunkTempData[sp], info->alignedCompressedVertexNum, 0);
+            // acc->tempBuffer[sp].write(info->chunkTempData[sp]);
             acc->tempBuffer[sp].sync(XCL_BO_SYNC_BO_FROM_DEVICE);
             for (int size = 0; size < info->compressedVertexNum; size++) {
                 std::cout <<" ["<< sp << "]["<< size << "]:" << info->chunkTempData[sp][size];
                 if ((size + 1) % 5 == 0) std::cout << std::endl;
             }
         } else {
+            // acc->propBuffer[sp].write(info->chunkPropData[sp]);
             acc->propBuffer[sp].sync(XCL_BO_SYNC_BO_FROM_DEVICE);
             for (int size = 0; size < info->compressedVertexNum; size++) {
                 std::cout <<" ["<< sp << "]["<< size << "]:" << info->chunkPropData[sp][size];

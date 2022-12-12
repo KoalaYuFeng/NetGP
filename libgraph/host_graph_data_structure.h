@@ -23,8 +23,8 @@ typedef struct
     xrt::run gsRun[SUB_PARTITION_NUM];
 
     std::vector<std::vector<xrt::bo>> edgeBuffer; // each subpartition owns one buffer
-    std::vector<xrt::bo> tempBuffer; // each subpartition owns one buffer
-    std::vector<xrt::bo> propBuffer; // each subpartition owns one buffer
+    xrt::bo tempBuffer[SUB_PARTITION_NUM]; // each subpartition owns one buffer
+    xrt::bo propBuffer[SUB_PARTITION_NUM]; // each subpartition owns one buffer
 
     xrt::bo outDegBuffer; // each partition owns one buffer
     xrt::bo outRegBuffer; // each partition owns one buffer

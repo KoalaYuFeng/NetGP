@@ -14,11 +14,11 @@ BINARY_LINK_OBJS    += --connectivity.sp  readEdgesCU1_1.edgeProp:DDR[0]
 endif
 BINARY_LINK_OBJS    += --connectivity.slr readEdgesCU1_1:SLR0
 
-BINARY_LINK_OBJS    += --connectivity.sp  readEdgesCU1_2.edgesHeadArray:DDR[2]
-BINARY_LINK_OBJS    += --connectivity.sp  readEdgesCU1_2.vertexPushinProp:DDR[2]
-BINARY_LINK_OBJS    += --connectivity.sp  readEdgesCU1_2.tmpVertexProp:DDR[2]
+BINARY_LINK_OBJS    += --connectivity.sp  readEdgesCU1_2.edgesHeadArray:DDR[1]
+BINARY_LINK_OBJS    += --connectivity.sp  readEdgesCU1_2.vertexPushinProp:DDR[1]
+BINARY_LINK_OBJS    += --connectivity.sp  readEdgesCU1_2.tmpVertexProp:DDR[1]
 ifeq ($(strip $(HAVE_EDGE_PROP)), $(strip $(VAR_TRUE)))
-BINARY_LINK_OBJS    += --connectivity.sp  readEdgesCU1_2.edgeProp:DDR[2]
+BINARY_LINK_OBJS    += --connectivity.sp  readEdgesCU1_2.edgeProp:DDR[1]
 endif
-BINARY_LINK_OBJS    += --connectivity.slr readEdgesCU1_2:SLR2
+BINARY_LINK_OBJS    += --connectivity.slr readEdgesCU1_2:SLR1
 

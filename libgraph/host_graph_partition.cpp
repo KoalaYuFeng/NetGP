@@ -3,6 +3,7 @@
 #include "host_graph_mem.h"
 #include "host_graph_scheduler.h"
 #include <map>
+#include <algorithm>
 // XRT includes
 #include "experimental/xrt_bo.h"
 #include "experimental/xrt_device.h"
@@ -87,8 +88,8 @@ int acceleratorDataLoad(const std::string &gName, const std::string &mode, graph
     info->chunkOutDegData = new int[info->alignedCompressedVertexNum];
     info->chunkOutRegData = new int[info->alignedCompressedVertexNum];
 
-    info->chunkTempData.resize(SUB_PARTITION_NUM);
-    info->chunkPropData.resize(SUB_PARTITION_NUM);
+    // info->chunkTempData.resize(SUB_PARTITION_NUM);
+    // info->chunkPropData.resize(SUB_PARTITION_NUM);
 
     for (int i = 0; i < num_partition; i++) {
         info->chunkProp[i].resize(num_subpartition);
@@ -112,6 +113,10 @@ int acceleratorDataLoad(const std::string &gName, const std::string &mode, graph
             info->chunkEdgeData[p][sp] = new int[edge_num_tmp * 2]; // each edge has 2 vertics.
             info->chunkTempData[sp] = new int[info->alignedCompressedVertexNum];
             info->chunkPropData[sp] = new int[info->alignedCompressedVertexNum];
+
+            std::fill_n(info->chunkTempData[sp], info->alignedCompressedVertexNum, 0);
+            std::fill_n(info->chunkPropData[sp], info->alignedCompressedVertexNum, 0);
+            std::fill_n(info->chunkEdgeData[p][sp], edge_num_tmp * 2, 0);
         }
 
         std::cout << "Partition "<< p <<" start index "<< vertex_index_start << " end index "<< vertex_index_end << std::endl;
@@ -182,9 +187,8 @@ void partitionFunction(graphInfo *info)
                 int min = 0;
                 for (int ii = 0; ii < info->chunkProp[p][sp].edgeNumChunk; ii++) {
                     if (info->rpa[vertex_index_end] <= (sp*info->chunkProp[p][sp].edgeNumChunk + ii + info->rpa[vertex_index_start])) {
-                        // info->chunkEdgeData[p][sp][ii*2] = ENDFLAG - 1; // GS will not process this edge, just for alignment;
-                        info->chunkEdgeData[p][sp][ii*2] = info->compressedVertexNum - 1;
-                        info->chunkEdgeData[p][sp][ii*2 + 1] = info->compressedVertexNum - 2;
+                        info->chunkEdgeData[p][sp][ii*2] = vertex_index_end - 1;
+                        info->chunkEdgeData[p][sp][ii*2 + 1] = ENDFLAG - 1; // GS will not process this edge, just for alignment;
                     } else {
                         info->chunkEdgeData[p][sp][ii*2] = (*it).first; // source vertex
                         info->chunkEdgeData[p][sp][ii*2 + 1] = (*it).second; // dest vertex
@@ -206,7 +210,9 @@ void partitionFunction(graphInfo *info)
     for (int p = 0; p < info->partitionNum; p++) {
         for (int sp = 0; sp < SUB_PARTITION_NUM; sp++) {
             for (int ii = 0; ii < info->chunkProp[p][sp].edgeNumChunk * 2; ii++) {
-                if ((ii % 2 == 1) && (info->chunkEdgeData[p][sp][ii] == 78675)) {
+
+                // std::cout << "E[" << p << "][" << sp << "][" << ii << "]:" << info->chunkEdgeData[p][sp][ii] << std::endl;
+                if ((ii % 2 == 1) && (info->chunkEdgeData[p][sp][ii] == 1)) {
                     std::cout << "edge :"<< info->chunkEdgeData[p][sp][ii - 1] <<" "<< info->chunkEdgeData[p][sp][ii]<<" ";
                     std::cout << "prop :"<< info->chunkPropData[sp][info->chunkEdgeData[p][sp][ii - 1]];
                     std::cout << std::endl;
@@ -215,7 +221,6 @@ void partitionFunction(graphInfo *info)
                 // if ((ii + 1) % 2 == 0) std::cout<<std::endl;
             }
         }
-        
     }
 
     // for (int sp = 0; sp < SUB_PARTITION_NUM; sp++) {
