@@ -48,6 +48,7 @@ int acceleratorInit(std::string& file_name,  graphInfo *info, graphAccelerator* 
     long unsigned int prop_size_bytes = 0;
     long unsigned int edge_size_bytes = 0;
     long unsigned int outDeg_size_bytes = 0;
+    long unsigned int temp_prop_size = 0;
 
     // // acc->outDegBuffer.resize(info->partitionNum);
     // // acc->outRegBuffer.resize(info->partitionNum);
@@ -55,10 +56,12 @@ int acceleratorInit(std::string& file_name,  graphInfo *info, graphAccelerator* 
     // acc->propBuffer.resize(SUB_PARTITION_NUM);
     // acc->tempBuffer.resize(SUB_PARTITION_NUM);
     acc->edgeBuffer.resize(info->partitionNum);
+    acc->tempBuffer.resize(info->partitionNum);
     std::cout << "acc edge buffer number = "<< acc->edgeBuffer.size() << std::endl;
 
     for (int i = 0; i < info->partitionNum; i++) {
         acc->edgeBuffer[i].resize(SUB_PARTITION_NUM);
+        acc->tempBuffer[i].resize(SUB_PARTITION_NUM);
 
         for (int j = 0; j < SUB_PARTITION_NUM; j++) {
             edge_size_bytes = info->chunkProp[i][j].edgeNumChunk * 2 * sizeof(int); // each edge has two vertex, vertex index uses int type;
@@ -67,9 +70,11 @@ int acceleratorInit(std::string& file_name,  graphInfo *info, graphAccelerator* 
 
             prop_size_bytes = info->alignedCompressedVertexNum * sizeof(prop_t); // vertex prop;
             acc->propBuffer[j] = xrt::bo(acc->graphDevice, prop_size_bytes, acc->gsKernel[j].group_id(1));
-            acc->tempBuffer[j] = xrt::bo(acc->graphDevice, prop_size_bytes, acc->gsKernel[j].group_id(1));
-            info->chunkTempData[j] = acc->tempBuffer[j].map<int*>();
             info->chunkPropData[j] = acc->propBuffer[j].map<int*>();
+
+            temp_prop_size = info->chunkProp[i][j].destVertexNumChunk * sizeof(prop_t); // temp vertex size
+            acc->tempBuffer[i][j] = xrt::bo(acc->graphDevice, prop_size_bytes, acc->gsKernel[j].group_id(1));
+            info->chunkTempData[i][j] = acc->tempBuffer[i][j].map<int*>();
         }
         // outDeg_size_bytes = info->chunkProp[i][0].destVertexNumChunk * sizeof(int); // vertex prop;
         // acc->outDegBuffer = xrt::bo(acc->graphDevice, outDeg_size_bytes, acc->applyKernel.group_id(0)); // vertex number * sizeof(int)
@@ -92,13 +97,16 @@ int acceleratorSuperStep(int superStep, graphInfo *info, graphAccelerator * acc)
             int narg = 0;
             acc->gsRun[j] = xrt::run(acc->gsKernel[j]);
             acc->gsRun[j].set_arg(narg++, acc->edgeBuffer[i][j]);
-            if (superStep % 2 == 0) {
-                acc->gsRun[j].set_arg(narg++, acc->propBuffer[j]);
-                acc->gsRun[j].set_arg(narg++, acc->tempBuffer[j]);
-            } else {
-                acc->gsRun[j].set_arg(narg++, acc->tempBuffer[j]);
-                acc->gsRun[j].set_arg(narg++, acc->propBuffer[j]);
-            }
+            acc->gsRun[j].set_arg(narg++, acc->propBuffer[j]);
+            acc->gsRun[j].set_arg(narg++, acc->tempBuffer[i][j]);
+
+            // if (superStep % 2 == 0) {
+            //     acc->gsRun[j].set_arg(narg++, acc->propBuffer[j]);
+            //     acc->gsRun[j].set_arg(narg++, acc->tempBuffer[j]);
+            // } else {
+            //     acc->gsRun[j].set_arg(narg++, acc->tempBuffer[j]);
+            //     acc->gsRun[j].set_arg(narg++, acc->propBuffer[j]);
+            // }
             // acc->gsRun[j].set_arg(narg++, DATA_SIZE * 4);
             acc->gsRun[j].set_arg(narg++, info->chunkProp[i][j].edgeNumChunk * 2);
             acc->gsRun[j].set_arg(narg++, 0);
@@ -111,12 +119,10 @@ int acceleratorSuperStep(int superStep, graphInfo *info, graphAccelerator * acc)
         for (int k = 0; k < SUB_PARTITION_NUM; k++) {
             acc->gsRun[k].wait();
 
-            // std::cout << "gs kernel run end, partition [" << k << "]" <<std::endl;
-
-            // acc->tempBuffer[k].sync(XCL_BO_SYNC_BO_FROM_DEVICE);
-            // acc->propBuffer[k].sync(XCL_BO_SYNC_BO_FROM_DEVICE);
-            // for (int size = 0; size < info->alignedCompressedVertexNum; size++) {
-            //     std::cout <<" ["<< k << "]["<< size << "]:" << info->chunkTempData[k][size];
+            // acc->tempBuffer[i][k].sync(XCL_BO_SYNC_BO_FROM_DEVICE);
+            // // acc->propBuffer[k].sync(XCL_BO_SYNC_BO_FROM_DEVICE);
+            // for (int size = 0; size < info->chunkProp[i][k].destVertexNumChunk; size++) {
+            //     std::cout <<" ["<< k << "]["<< size << "]:" << info->chunkTempData[i][k][size];
             //     if ((size + 1) % 5 == 0) std::cout << std::endl;
             // }
 
@@ -154,7 +160,7 @@ void partitionTransfer(graphInfo *info, graphAccelerator * acc)
         for (int j = 0; j < SUB_PARTITION_NUM; j++) {
             // acc->propBuffer[j].write(info->chunkPropData[j]);
             acc->propBuffer[j].sync(XCL_BO_SYNC_BO_TO_DEVICE);
-            acc->tempBuffer[j].sync(XCL_BO_SYNC_BO_TO_DEVICE);
+            acc->tempBuffer[i][j].sync(XCL_BO_SYNC_BO_TO_DEVICE);
             acc->edgeBuffer[i][j].sync(XCL_BO_SYNC_BO_TO_DEVICE);
         }
     }
@@ -165,26 +171,17 @@ void partitionTransfer(graphInfo *info, graphAccelerator * acc)
 void resultTransfer(graphInfo *info, graphAccelerator * acc, int run_counter)
 {
     // Transfer device buffer content to host side
-    for (int sp = 0; sp < SUB_PARTITION_NUM; sp++) {
+    for (int p = 0; p < info->partitionNum; p++) {
+        for (int sp = 0; sp < SUB_PARTITION_NUM; sp++) {
 
-        if (run_counter % 2 == 1) { // ping-pong for temp data and prop data;
-            std::fill_n(info->chunkTempData[sp], info->alignedCompressedVertexNum, 0);
-            // acc->tempBuffer[sp].write(info->chunkTempData[sp]);
-            acc->tempBuffer[sp].sync(XCL_BO_SYNC_BO_FROM_DEVICE);
-            for (int size = 0; size < info->compressedVertexNum; size++) {
-                std::cout <<" ["<< sp << "]["<< size << "]:" << info->chunkTempData[sp][size];
-                if ((size + 1) % 5 == 0) std::cout << std::endl;
-            }
-        } else {
-            // acc->propBuffer[sp].write(info->chunkPropData[sp]);
-            acc->propBuffer[sp].sync(XCL_BO_SYNC_BO_FROM_DEVICE);
-            for (int size = 0; size < info->compressedVertexNum; size++) {
-                std::cout <<" ["<< sp << "]["<< size << "]:" << info->chunkPropData[sp][size];
-                if ((size + 1) % 5 == 0) std::cout << std::endl;
-            }
+            acc->tempBuffer[p][sp].sync(XCL_BO_SYNC_BO_FROM_DEVICE);
+            // for (int size = 0; size < info->chunkProp[p][sp].destVertexNumChunk; size++) {
+            //     std::cout << "[" << p <<"]["<< sp << "]["<< size << "]:" << info->chunkTempData[p][sp][size];
+            //     if ((size + 1) % 5 == 0) std::cout << std::endl;
+            // }
+
+            std::cout << std::endl;
         }
-
-        std::cout << std::endl;
     }
 
 }

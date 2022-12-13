@@ -33,6 +33,8 @@ int main(int argc, char **argv) {
     std::string path_graph_dataset = "/data/graph_dataset/";
     std::cout << "start main" << std::endl;
 
+    auto start_main = chrono::steady_clock::now();
+
     // load graph
     acceleratorDataLoad(g_name, path_graph_dataset, &graphDataInfo);
     
@@ -48,8 +50,8 @@ int main(int argc, char **argv) {
 
     // super step execution : set args and kernel run 
 
-    int super_step_num = 1;
-    auto start = chrono::steady_clock::now();
+    int super_step_num = 10;
+    auto start_kernel = chrono::steady_clock::now();
 
     for (int run_counter = 0 ; run_counter < super_step_num ; run_counter++) {
         acceleratorSuperStep(run_counter, &graphDataInfo, &thunderGraph);
@@ -60,7 +62,9 @@ int main(int argc, char **argv) {
 
     auto end = chrono::steady_clock::now();
 
-    std::cout << "Graph elapses " << (chrono::duration_cast<chrono::microseconds>(end - start).count())/super_step_num<< "us" << std::endl; 
+    std::cout << "Graph preprocess[load + partition] elapses " << (chrono::duration_cast<chrono::seconds>(start_kernel - start_main).count())<< "s" << std::endl; 
+
+    std::cout << "Graph kernel process elapses " << (chrono::duration_cast<chrono::microseconds>(end - start_kernel).count())/super_step_num<< "us" << std::endl; 
 
     // transfer FPGA data to host side
     resultTransfer(&graphDataInfo, &thunderGraph, super_step_num);
@@ -71,15 +75,15 @@ int main(int argc, char **argv) {
     for (int j = 0; j < SUB_PARTITION_NUM; j++) {
         for (int i = 0; i < partition_num; i++) {
             delete[] graphDataInfo.chunkEdgeData[i][j];
+            delete[] graphDataInfo.chunkTempData[i][j];
             std::cout << "edge data release finish" <<std::endl;
         }
-        delete[] graphDataInfo.chunkTempData[j];
         delete[] graphDataInfo.chunkPropData[j];
         std::cout << "temp prop data release finish" <<std::endl;
     }
 
-    delete[] graphDataInfo.chunkOutDegData;
-    delete[] graphDataInfo.chunkOutRegData;
+    // delete[] graphDataInfo.chunkOutDegData;
+    // delete[] graphDataInfo.chunkOutRegData;
     std::cout << "outdeg and reg data release finish" <<std::endl;
 
     return 0;
