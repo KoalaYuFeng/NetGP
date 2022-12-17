@@ -13,7 +13,7 @@ Graph* createGraph(const std::string &gName, const std::string &mode) {
         gptr = new Graph(dir + "web-baidu-baike.edges");
     }
     else if (gName == "FU") {
-        gptr = new Graph(dir + "soc-flickr-und.edges");
+        gptr = new Graph(dir + "soc-flickr.ungraph.edges");
     }
     else if (gName == "G23") {
         gptr = new Graph(dir + "graph500-scale23-ef16_adj.edges");
@@ -43,7 +43,7 @@ Graph* createGraph(const std::string &gName, const std::string &mode) {
         gptr = new Graph(dir + "pokec-relationships.txt");
     }
     else if (gName == "TC") {
-        gptr = new Graph(dir + "wiki-topcats.txt");
+        gptr = new Graph(dir + "wiki-topcats.mtx");
     }
     else if (gName == "WT") {
         gptr = new Graph(dir + "wiki-Talk.txt");

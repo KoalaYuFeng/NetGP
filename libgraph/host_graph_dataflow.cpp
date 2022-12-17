@@ -180,7 +180,7 @@ void resultTransfer(graphInfo *info, graphAccelerator * acc, int run_counter)
             //     if ((size + 1) % 5 == 0) std::cout << std::endl;
             // }
 
-            std::cout << std::endl;
+            // std::cout << std::endl;
         }
     }
 

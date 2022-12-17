@@ -15,12 +15,53 @@
 
 int acceleratorDataLoad(const std::string &gName, const std::string &mode, graphInfo *info)
 {
-    Graph* gptr = createGraph(gName, mode);
-    CSR* csr    = new CSR(*gptr);
-    free(gptr);
 
-    int vertex_num = csr->vertexNum;
-    int edge_num   = csr->edgeNum;
+    int read_size= 0;
+    std::string name;
+    // read csr file : input row point array
+    name = mode + gName + "_rapi.bin";
+    std::ifstream fFileReader_rapi(name, std::ios::binary);
+	if (!fFileReader_rapi) {
+		std::cout << "graph rapi read file failed" << std::endl;
+		return -1;
+	}
+    read_size = 0;
+    fFileReader_rapi.read((char*)&read_size, sizeof(int)); // first number -> size;
+    std::cout << " rapi file read file size : "<< read_size << std::endl;
+    int* graph_rapi = new int[read_size];
+	fFileReader_rapi.read((char*)graph_rapi, read_size * sizeof(int));
+	fFileReader_rapi.close();
+
+    // read csr file : output row point array
+    name = mode + gName + "_rapo.bin";
+    std::ifstream fFileReader_rapo(name, std::ios::binary);
+	if (!fFileReader_rapo) {
+		std::cout << "graph rapo read file failed" << std::endl;
+		return -1;
+	}
+    read_size = 0;
+    fFileReader_rapo.read((char*)&read_size, sizeof(int)); // first number -> size;
+    std::cout << " rapo file read file size : "<< read_size << std::endl;
+    int vertex_num = read_size;
+    int* graph_rapo = new int[read_size];
+	fFileReader_rapo.read((char*)graph_rapo, read_size * sizeof(int));
+	fFileReader_rapo.close();
+
+    // read ciai file : input column array
+    name = mode + gName + "_ciai.bin";
+    std::ifstream fFileReader_ciai(name, std::ios::binary);
+	if (!fFileReader_ciai) {
+		std::cout << "graph ciai read file failed" << std::endl;
+		return -1;
+	}
+    read_size = 0;
+    fFileReader_ciai.read((char*)&read_size, sizeof(int)); // first number -> size;
+    std::cout << " ciai file read file size : "<< read_size << std::endl;
+    int edge_num = read_size;
+    int* graph_ciai = new int[read_size];
+	fFileReader_ciai.read((char*)graph_ciai, read_size * sizeof(int));
+	fFileReader_ciai.close();
+
     info->vertexNum = vertex_num;
     info->edgeNum   = edge_num;
     
@@ -31,7 +72,7 @@ int acceleratorDataLoad(const std::string &gName, const std::string &mode, graph
     int* mapping_vertex_array = new int[vertex_num];
     for (int i = 0; i < vertex_num; i++) {
         mapping_vertex_array[i] = num_mapped;
-        int outdeg_tmp = csr->rpao[i + 1] - csr->rpao[i];
+        int outdeg_tmp = graph_rapo[i + 1] - graph_rapo[i];
         if (outdeg_tmp > 0) {
             info->outDeg.push_back(outdeg_tmp);
             info->vertexMapping.push_back(i);
@@ -58,11 +99,11 @@ int acceleratorDataLoad(const std::string &gName, const std::string &mode, graph
     info->rpa.resize(num_mapped + 1);
     info->rpa[0] = 0;
     for (int j = 0; j < num_mapped; j++) {
-        int in_deg_tmp = csr->rpai[info->vertexMapping[j]+1] - csr->rpai[info->vertexMapping[j]];
+        int in_deg_tmp = graph_rapi[info->vertexMapping[j]+1] - graph_rapi[info->vertexMapping[j]];
         info->rpa[j+1] = info->rpa[j] + in_deg_tmp;
-        int bias = csr->rpai[info->vertexMapping[j]];
+        int bias = graph_rapi[info->vertexMapping[j]];
         for (int k = 0; k < in_deg_tmp; k++) {
-            info->cia.push_back(mapping_vertex_array[csr->ciai[bias + k]]);
+            info->cia.push_back(mapping_vertex_array[graph_ciai[bias + k]]);
             info->destIndexList.push_back(j); // for time optimization in partition function.
             num_compress_edge++;
         }
@@ -74,6 +115,10 @@ int acceleratorDataLoad(const std::string &gName, const std::string &mode, graph
 
     std::cout << "Edge compress: original : "<< edge_num << " compressed : "<< num_compress_edge << std::endl;
     info->compressedEdgeNum = num_compress_edge;
+
+    delete []graph_rapo;
+    delete []graph_rapi;
+    delete []graph_ciai;
 
     // calculate partition number and edge number in each subpartition
     int num_partition = (num_mapped + PARTITION_SIZE - 1) / PARTITION_SIZE; // PARTITION_SIZE align
@@ -208,11 +253,12 @@ void partitionFunction(graphInfo *info)
     }
 
     // ===============  Print information  ================
-    // for (int p = 0; p < info->partitionNum; p++) {
+    // for (int p = 6; p < info->partitionNum; p++) {
     //     for (int sp = 0; sp < SUB_PARTITION_NUM; sp++) {
     //         for (int ii = 0; ii < info->chunkProp[p][sp].edgeNumChunk * 2; ii++) {
 
-    //             // std::cout << "E[" << p << "][" << sp << "][" << ii << "]:" << info->chunkEdgeData[p][sp][ii] << std::endl;
+    //             std::cout << "E[" << p << "][" << sp << "][" << ii << "]:" << info->chunkEdgeData[p][sp][ii] << " ";
+    //             if ((ii+1) % 2 == 0) std::cout << std::endl;
     //             // if ((ii % 2 == 1) && (info->chunkEdgeData[p][sp][ii] == 1)) {
     //             //     std::cout << "edge :"<< info->chunkEdgeData[p][sp][ii - 1] <<" "<< info->chunkEdgeData[p][sp][ii]<<" ";
     //             //     std::cout << "prop :"<< info->chunkPropData[sp][info->chunkEdgeData[p][sp][ii - 1]];
