@@ -9,12 +9,7 @@
 #include "experimental/xrt_device.h"
 #include "experimental/xrt_kernel.h"
 
-// graphAccelerator thunderGraph;
-
-// graphAccelerator * getAccelerator(void)
-// {
-//     return &thunderGraph;
-// }
+#define USE_APPLY true
 
 int acceleratorInit(std::string& file_name,  graphInfo *info, graphAccelerator* acc)
 {
@@ -23,7 +18,7 @@ int acceleratorInit(std::string& file_name,  graphInfo *info, graphAccelerator* 
     acc->graphDevice = xrt::device(0); // every VM has only one FPGA, id = 0;
     acc->graphUuid = acc->graphDevice.load_xclbin(file_name);
 
-    std::cout << "xclbin load done" <<std::endl;
+    std::cout << "[INFO] Xclbin load done" <<std::endl;
 
     // init FPGA kernels
     std::string id, krnl_name;
@@ -32,17 +27,32 @@ int acceleratorInit(std::string& file_name,  graphInfo *info, graphAccelerator* 
         id = std::to_string(i + 1);
         krnl_name = "readEdgesCU1:{readEdgesCU1_" + id + "}";
         acc->gsKernel[i] = xrt::kernel(acc->graphDevice, acc->graphUuid, krnl_name.c_str());
-        // krnl_name = "streamMerge:{streamMerge_" + id + "}";
-        // acc->mergeKernel[i] = xrt::kernel(acc->graphDevice, acc->graphUuid, krnl_name.c_str());
-        // krnl_name = "streamForward:{streamForward_" + id + "}";
-        // acc->forwardKernel[i] = xrt::kernel(acc->graphDevice, acc->graphUuid, krnl_name.c_str());
-        // krnl_name = "readVertex:{readVertex_" + id + "}";
-        // acc->readKernel[i] = xrt::kernel(acc->graphDevice, acc->graphUuid, krnl_name.c_str());
-        // krnl_name = "writeVertex:{writeVertex_" + id + "}";
-        // acc->writeKernel[i] = xrt::kernel(acc->graphDevice, acc->graphUuid, krnl_name.c_str());
     }
-    // std::string krnl_name_full = "vertexApply:{vertexApply_1}";
-    // acc->applyKernel = xrt::kernel(acc->graphDevice, acc->graphUuid, krnl_name_full.c_str());
+
+#if USE_APPLY
+
+    for (int i = 0; i < SUB_PARTITION_NUM - 1; i++)
+    {
+        id = std::to_string(i + 1);
+        krnl_name = "streamMerge:{streamMerge_" + id + "}";
+        acc->mergeKernel[i] = xrt::kernel(acc->graphDevice, acc->graphUuid, krnl_name.c_str());
+        krnl_name = "streamForward:{streamForward_" + id + "}";
+        acc->forwardKernel[i] = xrt::kernel(acc->graphDevice, acc->graphUuid, krnl_name.c_str());
+        krnl_name = "readVertex:{readVertex_" + id + "}";
+        acc->readKernel[i] = xrt::kernel(acc->graphDevice, acc->graphUuid, krnl_name.c_str());
+        krnl_name = "writeVertex:{writeVertex_" + id + "}";
+        acc->writeKernel[i] = xrt::kernel(acc->graphDevice, acc->graphUuid, krnl_name.c_str());
+    }
+
+    krnl_name = "readVertex:{readVertex_" + std::to_string(SUB_PARTITION_NUM) + "}";
+    acc->readKernel[SUB_PARTITION_NUM - 1] = xrt::kernel(acc->graphDevice, acc->graphUuid, krnl_name.c_str());
+    krnl_name = "writeVertex:{writeVertex_" + std::to_string(SUB_PARTITION_NUM) + "}";
+    acc->writeKernel[SUB_PARTITION_NUM - 1] = xrt::kernel(acc->graphDevice, acc->graphUuid, krnl_name.c_str());
+
+    std::string krnl_name_full = "vertexApply:{vertexApply_1}";
+    acc->applyKernel = xrt::kernel(acc->graphDevice, acc->graphUuid, krnl_name_full.c_str());
+
+#endif
 
     // init FPGA buffers
     long unsigned int prop_size_bytes = 0;
@@ -50,14 +60,8 @@ int acceleratorInit(std::string& file_name,  graphInfo *info, graphAccelerator* 
     long unsigned int outDeg_size_bytes = 0;
     long unsigned int temp_prop_size = 0;
 
-    // // acc->outDegBuffer.resize(info->partitionNum);
-    // // acc->outRegBuffer.resize(info->partitionNum);
-
-    // acc->propBuffer.resize(SUB_PARTITION_NUM);
-    // acc->tempBuffer.resize(SUB_PARTITION_NUM);
     acc->edgeBuffer.resize(info->partitionNum);
     acc->tempBuffer.resize(info->partitionNum);
-    std::cout << "acc edge buffer number = "<< acc->edgeBuffer.size() << std::endl;
 
     for (int i = 0; i < info->partitionNum; i++) {
         acc->edgeBuffer[i].resize(SUB_PARTITION_NUM);
@@ -73,32 +77,53 @@ int acceleratorInit(std::string& file_name,  graphInfo *info, graphAccelerator* 
             info->chunkPropData[j] = acc->propBuffer[j].map<int*>();
 
             temp_prop_size = info->chunkProp[i][j].destVertexNumChunk * sizeof(prop_t); // temp vertex size
-            acc->tempBuffer[i][j] = xrt::bo(acc->graphDevice, prop_size_bytes, acc->gsKernel[j].group_id(1));
+            acc->tempBuffer[i][j] = xrt::bo(acc->graphDevice, temp_prop_size, acc->gsKernel[j].group_id(1));
             info->chunkTempData[i][j] = acc->tempBuffer[i][j].map<int*>();
         }
-        // outDeg_size_bytes = info->chunkProp[i][0].destVertexNumChunk * sizeof(int); // vertex prop;
-        // acc->outDegBuffer = xrt::bo(acc->graphDevice, outDeg_size_bytes, acc->applyKernel.group_id(0)); // vertex number * sizeof(int)
-        // acc->outRegBuffer = xrt::bo(acc->graphDevice, outDeg_size_bytes, acc->applyKernel.group_id(0));
 
-        // info->chunkOutDegData = acc->outDegBuffer[i].map<int*>();
-        // info->chunkOutRegData = acc->outRegBuffer[i].map<int*>();
+#if USE_APPLY
+
+        for (int j = 0; j < SUB_PARTITION_NUM; j++) {
+            prop_size_bytes = info->alignedCompressedVertexNum * sizeof(prop_t); // new vertex prop;
+            acc->propBufferNew[j] = xrt::bo(acc->graphDevice, prop_size_bytes, acc->writeKernel[j].group_id(0));
+            info->chunkPropDataNew[j] = acc->propBufferNew[j].map<int*>();
+        }
+
+        acc->newBuffer.resize(info->partitionNum);
+        for (int p = 0; p < info->partitionNum; p++) {
+            acc->newBuffer[p].resize(SUB_PARTITION_NUM);
+            for (int sp = 0; sp < SUB_PARTITION_NUM; sp++) {
+                int size_tmp = info->chunkProp[p][sp].destVertexNumChunk * sizeof(prop_t);
+                int offset_tmp = p * PARTITION_SIZE * sizeof(prop_t);
+                acc->newBuffer[p][sp] = xrt::bo(acc->propBufferNew[sp], size_tmp, offset_tmp); // size, offset
+            }
+        }
+
+        outDeg_size_bytes = info->alignedCompressedVertexNum * sizeof(prop_t); // vertex number * sizeof(int)
+        acc->outDegBuffer = xrt::bo(acc->graphDevice, outDeg_size_bytes, acc->applyKernel.group_id(0));
+        acc->outRegBuffer = xrt::bo(acc->graphDevice, outDeg_size_bytes, acc->applyKernel.group_id(0));
+
+        info->chunkOutDegData = acc->outDegBuffer.map<int*>();
+        info->chunkOutRegData = acc->outRegBuffer.map<int*>();
+
+#endif
+
     }
 
-    std::cout << " accelerator init done ! " << std::endl;
+    std::cout << "[INFO] Accelerator init done ! " << std::endl;
     return 0;
 }
 
 int acceleratorSuperStep(int superStep, graphInfo *info, graphAccelerator * acc)
 {
-    for (int i = 0; i < info->partitionNum; i++) {
-    // for (int i = 0; i < 1; i++) {
-        std::cout << "gs kernel start, partition [" << i << "]" <<std::endl;
-        for (int j = 0; j < SUB_PARTITION_NUM; j++) {
+    for (int p = 0; p < info->partitionNum; p++) {
+
+        for (int sp = 0; sp < SUB_PARTITION_NUM; sp++) {
             int narg = 0;
-            acc->gsRun[j] = xrt::run(acc->gsKernel[j]);
-            acc->gsRun[j].set_arg(narg++, acc->edgeBuffer[i][j]);
-            acc->gsRun[j].set_arg(narg++, acc->propBuffer[j]);
-            acc->gsRun[j].set_arg(narg++, acc->tempBuffer[i][j]);
+            acc->gsRun[sp] = xrt::run(acc->gsKernel[sp]);
+            acc->gsRun[sp].set_arg(narg++, acc->edgeBuffer[p][sp]);
+            acc->gsRun[sp].set_arg(narg++, acc->propBuffer[sp]);
+            acc->gsRun[sp].set_arg(narg++, acc->tempBuffer[p][sp]);
 
             // if (superStep % 2 == 0) {
             //     acc->gsRun[j].set_arg(narg++, acc->propBuffer[j]);
@@ -107,13 +132,10 @@ int acceleratorSuperStep(int superStep, graphInfo *info, graphAccelerator * acc)
             //     acc->gsRun[j].set_arg(narg++, acc->tempBuffer[j]);
             //     acc->gsRun[j].set_arg(narg++, acc->propBuffer[j]);
             // }
-            // acc->gsRun[j].set_arg(narg++, DATA_SIZE * 4);
-            acc->gsRun[j].set_arg(narg++, info->chunkProp[i][j].edgeNumChunk * 2);
-            acc->gsRun[j].set_arg(narg++, 0);
-            // acc->gsRun[j].set_arg(narg++, DATA_SIZE);
-            acc->gsRun[j].set_arg(narg++, info->alignedCompressedVertexNum);
-            // acc->edgeBuffer[i][j].sync(XCL_BO_SYNC_BO_TO_DEVICE); // try to copy data into device memory. map function seems a problem
-            acc->gsRun[j].start();
+            acc->gsRun[sp].set_arg(narg++, info->chunkProp[p][sp].edgeNumChunk * 2);
+            acc->gsRun[sp].set_arg(narg++, 0);
+            acc->gsRun[sp].set_arg(narg++, info->alignedCompressedVertexNum);
+            acc->gsRun[sp].start();
         }
 
         for (int k = 0; k < SUB_PARTITION_NUM; k++) {
@@ -128,8 +150,67 @@ int acceleratorSuperStep(int superStep, graphInfo *info, graphAccelerator * acc)
 
         }
 
-        std::cout << "gs kernel end, partition [" << i << "]" <<std::endl;
     }
+
+#if USE_APPLY
+
+    for (int p = 0; p < info->partitionNum; p++) {
+        for (int sp = 0; sp < SUB_PARTITION_NUM - 1; sp++) {
+            acc->readRun[sp] = xrt::run(acc->readKernel[sp]);
+            acc->readRun[sp].set_arg(0, acc->tempBuffer[p][sp]);
+            acc->readRun[sp].set_arg(2, info->chunkProp[p][sp].destVertexNumChunk);
+            acc->mergeRun[sp] = xrt::run(acc->mergeKernel[sp]);
+            acc->mergeRun[sp].set_arg(3, 0); // dest = 0;
+            acc->mergeRun[sp].set_arg(4, info->chunkProp[p][sp].destVertexNumChunk);
+            acc->forwardRun[sp] = xrt::run(acc->forwardKernel[sp]);
+            acc->forwardRun[sp].set_arg(3, 1); // dest = 1;
+            acc->forwardRun[sp].set_arg(4, info->chunkProp[p][sp].destVertexNumChunk);
+            acc->writeRun[sp] = xrt::run(acc->writeKernel[sp]);
+            acc->writeRun[sp].set_arg(0, acc->newBuffer[p][sp]); // need to add offset
+            acc->writeRun[sp].set_arg(2, info->chunkProp[p][sp].destVertexNumChunk);
+        }
+
+        acc->readRun[SUB_PARTITION_NUM - 1] = xrt::run(acc->readKernel[SUB_PARTITION_NUM - 1]);
+        acc->readRun[SUB_PARTITION_NUM - 1].set_arg(0, acc->tempBuffer[p][SUB_PARTITION_NUM - 1]);
+        acc->readRun[SUB_PARTITION_NUM - 1].set_arg(2, info->chunkProp[p][SUB_PARTITION_NUM - 1].destVertexNumChunk);
+        acc->applyRun = xrt::run(acc->applyKernel);
+        acc->applyRun.set_arg(0, acc->propBuffer[0]); // depends on which SLR
+        acc->applyRun.set_arg(3, acc->outDegBuffer);
+        acc->applyRun.set_arg(4, acc->outRegBuffer);
+        acc->applyRun.set_arg(5, info->chunkProp[p][0].destVertexNumChunk); // depends on which SLR
+        acc->applyRun.set_arg(6, 0);
+        acc->applyRun.set_arg(7, 0);
+        acc->writeRun[SUB_PARTITION_NUM - 1] = xrt::run(acc->writeKernel[SUB_PARTITION_NUM - 1]);
+        acc->writeRun[SUB_PARTITION_NUM - 1].set_arg(0, acc->newBuffer[p][SUB_PARTITION_NUM - 1]); // need to add offset
+        acc->writeRun[SUB_PARTITION_NUM - 1].set_arg(2, info->chunkProp[p][SUB_PARTITION_NUM - 1].destVertexNumChunk);
+
+//================= Apply kernel start ================
+
+        for (int sp = 0; sp < SUB_PARTITION_NUM; sp++) {
+            acc->readRun[sp].start(); }
+        for (int sp = 0; sp < SUB_PARTITION_NUM - 1; sp++) {
+            acc->mergeRun[sp].start(); }
+        acc->applyRun.start();
+        for (int sp = 0; sp < SUB_PARTITION_NUM - 1; sp++) {
+            acc->forwardRun[sp].start(); }
+        for (int sp = 0; sp < SUB_PARTITION_NUM; sp++) {
+            acc->writeRun[sp].start(); }
+
+//================= Apply kernel wait ================
+
+        for (int sp = 0; sp < SUB_PARTITION_NUM; sp++) {
+            acc->readRun[sp].wait(); }
+        for (int sp = 0; sp < SUB_PARTITION_NUM - 1; sp++) {
+            acc->mergeRun[sp].wait(); }
+        acc->applyRun.wait();
+        for (int sp = 0; sp < SUB_PARTITION_NUM - 1; sp++) {
+            acc->forwardRun[sp].wait(); }
+        for (int sp = 0; sp < SUB_PARTITION_NUM; sp++) {
+            acc->writeRun[sp].wait(); }
+
+    }
+
+#endif
 
     return 0;
 }
@@ -156,6 +237,7 @@ prop_t* acceleratorQueryProperty(int step)
 void partitionTransfer(graphInfo *info, graphAccelerator * acc)
 {
     // Synchronize buffer content with device side
+    acc->outDegBuffer.sync(XCL_BO_SYNC_BO_TO_DEVICE);
     for (int i = 0; i < info->partitionNum; i++) {
         for (int j = 0; j < SUB_PARTITION_NUM; j++) {
             // acc->propBuffer[j].write(info->chunkPropData[j]);
@@ -165,16 +247,18 @@ void partitionTransfer(graphInfo *info, graphAccelerator * acc)
         }
     }
 
-    std::cout << "sync data to device " << std::endl;
+    std::cout << "[INFO] Sync data (prop, temp, edge, outDeg) to device " << std::endl;
 }
 
 void resultTransfer(graphInfo *info, graphAccelerator * acc, int run_counter)
 {
     // Transfer device buffer content to host side
+    acc->outRegBuffer.sync(XCL_BO_SYNC_BO_FROM_DEVICE);
     for (int p = 0; p < info->partitionNum; p++) {
         for (int sp = 0; sp < SUB_PARTITION_NUM; sp++) {
 
-            acc->tempBuffer[p][sp].sync(XCL_BO_SYNC_BO_FROM_DEVICE);
+            acc->tempBuffer[p][sp].sync(XCL_BO_SYNC_BO_FROM_DEVICE); // need to modify, newBuffer
+
             // for (int size = 0; size < info->chunkProp[p][sp].destVertexNumChunk; size++) {
             //     std::cout << "[" << p <<"]["<< sp << "]["<< size << "]:" << info->chunkTempData[p][sp][size];
             //     if ((size + 1) % 5 == 0) std::cout << std::endl;
@@ -183,6 +267,7 @@ void resultTransfer(graphInfo *info, graphAccelerator * acc, int run_counter)
             // std::cout << std::endl;
         }
     }
+    std::cout << "[INFO] Sync data (temp, outReg) to host " << std::endl;
 
 }
 

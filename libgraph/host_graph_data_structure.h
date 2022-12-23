@@ -21,10 +21,17 @@ typedef struct
     xrt::kernel writeKernel[SUB_PARTITION_NUM];
 
     xrt::run gsRun[SUB_PARTITION_NUM];
+    xrt::run applyRun;
+    xrt::run mergeRun[SUB_PARTITION_NUM];
+    xrt::run forwardRun[SUB_PARTITION_NUM];
+    xrt::run readRun[SUB_PARTITION_NUM];
+    xrt::run writeRun[SUB_PARTITION_NUM];
 
     std::vector<std::vector<xrt::bo>> edgeBuffer; // each subpartition owns one buffer
-    std::vector<std::vector<xrt::bo>> tempBuffer;
+    std::vector<std::vector<xrt::bo>> tempBuffer; // for GS kernel temp result, could be optimized.
     xrt::bo propBuffer[SUB_PARTITION_NUM]; // each subpartition owns one buffer
+    xrt::bo propBufferNew[SUB_PARTITION_NUM]; // need to divide this buffer to several sub-buffers
+    std::vector<std::vector<xrt::bo>> newBuffer; // sub-buffers.
 
     xrt::bo outDegBuffer; // each partition owns one buffer
     xrt::bo outRegBuffer; // each partition owns one buffer

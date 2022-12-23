@@ -26,6 +26,7 @@ int dataPrepareProperty(graphInfo *info)
             if (i >= info->compressedVertexNum) {
                 info->chunkPropData[sp][i] = 0;
             } else {
+                info->chunkOutDegData[i] = info->outDeg[i];
                 info->chunkPropData[sp][i] = init_score_int / info->outDeg[i];
             }
         }
@@ -36,6 +37,6 @@ int dataPrepareProperty(graphInfo *info)
     //     if ( i % 50 == 0) std::cout << std::endl;
     // }
 
-    std::cout << " data prepare property done " << std::endl;
+    std::cout << "[INFO] Data prepare property done " << std::endl;
     return 0;
 }

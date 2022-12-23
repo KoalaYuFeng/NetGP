@@ -31,7 +31,7 @@ int main(int argc, char **argv) {
     std::string binary_file = parser.value("xclbin_file");
     std::string g_name = parser.value("dataset");
     std::string path_graph_dataset = "/data/binary_graph_dataset/";
-    std::cout << "start main" << std::endl;
+    std::cout << "[INFO] Start main" << std::endl;
 
     auto start_main = chrono::steady_clock::now();
 
@@ -50,7 +50,7 @@ int main(int argc, char **argv) {
 
     // super step execution : set args and kernel run 
 
-    int super_step_num = 10;
+    int super_step_num = 100;
     auto start_kernel = chrono::steady_clock::now();
 
     for (int run_counter = 0 ; run_counter < super_step_num ; run_counter++) {
@@ -82,8 +82,8 @@ int main(int argc, char **argv) {
         std::cout << "temp prop data release finish" <<std::endl;
     }
 
-    // delete[] graphDataInfo.chunkOutDegData;
-    // delete[] graphDataInfo.chunkOutRegData;
+    delete[] graphDataInfo.chunkOutDegData;
+    delete[] graphDataInfo.chunkOutRegData;
     std::cout << "outdeg and reg data release finish" <<std::endl;
 
     return 0;

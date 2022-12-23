@@ -130,11 +130,15 @@ int acceleratorDataLoad(const std::string &gName, const std::string &mode, graph
 
     info->chunkProp.resize(num_partition);
     info->chunkEdgeData.resize(num_partition);
-    // info->chunkOutDegData = new int[info->alignedCompressedVertexNum];
-    // info->chunkOutRegData = new int[info->alignedCompressedVertexNum];
+
+    info->chunkOutDegData = new int[info->alignedCompressedVertexNum];
+    info->chunkOutRegData = new int[info->alignedCompressedVertexNum];
+    std::fill_n(info->chunkOutDegData, info->alignedCompressedVertexNum, 0);
+    std::fill_n(info->chunkOutRegData, info->alignedCompressedVertexNum, 0);
 
     info->chunkTempData.resize(num_partition);
     info->chunkPropData.resize(SUB_PARTITION_NUM);
+    info->chunkPropDataNew.resize(SUB_PARTITION_NUM);
 
     for (int i = 0; i < num_partition; i++) {
         info->chunkProp[i].resize(num_subpartition);
@@ -154,19 +158,21 @@ int acceleratorDataLoad(const std::string &gName, const std::string &mode, graph
 
         for (int sp = 0; sp < num_subpartition; sp++) {
             info->chunkProp[p][sp].edgeNumChunk = edge_num_tmp;
-            info->chunkProp[p][sp].destVertexNumChunk = vertex_index_end - vertex_index_start;
+            info->chunkProp[p][sp].destVertexNumChunk = (vertex_index_end - vertex_index_start + 1023)/1024 *1024; // aligned vertex number
 
             info->chunkEdgeData[p][sp] = new int[edge_num_tmp * 2]; // each edge has 2 vertics.
             info->chunkTempData[p][sp] = new int[vertex_index_end - vertex_index_start];
             info->chunkPropData[sp] = new int[info->alignedCompressedVertexNum];
+            info->chunkPropDataNew[sp] = new int[info->alignedCompressedVertexNum];
 
             std::fill_n(info->chunkTempData[p][sp], vertex_index_end - vertex_index_start, 0);
             std::fill_n(info->chunkPropData[sp], info->alignedCompressedVertexNum, 0);
+            std::fill_n(info->chunkPropDataNew[sp], info->alignedCompressedVertexNum, 0);
             std::fill_n(info->chunkEdgeData[p][sp], edge_num_tmp * 2, 0);
         }
 
         std::cout << "Partition "<< p <<" start index "<< vertex_index_start << " end index "<< vertex_index_end << std::endl;
-        std::cout << " Edge number: partion "<< edge_num_tmp * num_subpartition << " subpartion "<< edge_num_tmp << std::endl;
+        std::cout << "Edge number: partion "<< edge_num_tmp * num_subpartition << " subpartion "<< edge_num_tmp << std::endl;
     }
 
     delete [] mapping_vertex_array;
@@ -208,7 +214,7 @@ void reTransferProp(graphInfo *info)
 
 void partitionFunction(graphInfo *info)
 {
-    std::cout << "Start partition function " << std::endl;
+    std::cout << "[INFO] Start partition function " << std::endl;
     int vertex_index_start = 0;
     int vertex_index_end = 0;
 
@@ -219,8 +225,6 @@ void partitionFunction(graphInfo *info)
 
         vertex_index_start = p * PARTITION_SIZE;
         vertex_index_end = ((p+1)*PARTITION_SIZE > (info->compressedVertexNum)) ? (info->compressedVertexNum) : (p+1)*PARTITION_SIZE;
-
-        std::cout << "Partition "<< p <<" start index "<< vertex_index_start << " end index "<< vertex_index_end << std::endl;
 
         for (int i = info->rpa[vertex_index_start]; i < info->rpa[vertex_index_end]; i++) {
             edge_list[p].insert(std::pair<int, int>(info->cia[i], info->destIndexList[i]));
@@ -249,8 +253,11 @@ void partitionFunction(graphInfo *info)
                 info->chunkProp[p][sp].srcVertexNumChunk = max - min;
             }
         }
-        std::cout << " Partition " << p << " process done" <<std::endl; 
+        std::cout << " Partition " << p << " index range: " << vertex_index_start << "," << vertex_index_end << " Done" << std::endl;
+        std::multimap<int, int>().swap(edge_list[p]); // free memory
     }
+
+    std::vector<std::multimap<int, int>>().swap(edge_list); // free memory
 
     // ===============  Print information  ================
     // for (int p = 6; p < info->partitionNum; p++) {
@@ -277,7 +284,6 @@ void partitionFunction(graphInfo *info)
     //     }
     // }
 
-    std::cout << " Partition function finish" << std::endl;
 }
 
 int acceleratorDataPreprocess(graphInfo *info)
