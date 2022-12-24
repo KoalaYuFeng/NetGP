@@ -30,9 +30,10 @@ typedef struct
     std::vector<std::vector<xrt::bo>> edgeBuffer; // each subpartition owns one buffer
     std::vector<std::vector<xrt::bo>> tempBuffer; // for GS kernel temp result, could be optimized.
     xrt::bo propBuffer[SUB_PARTITION_NUM]; // each subpartition owns one buffer
+    std::vector<std::vector<xrt::bo>> subBuffer; // sub-buffers of propBuffer
     xrt::bo propBufferNew[SUB_PARTITION_NUM]; // need to divide this buffer to several sub-buffers
-    std::vector<std::vector<xrt::bo>> newBuffer; // sub-buffers.
-
+    std::vector<std::vector<xrt::bo>> subNewBuffer; // sub-buffers of propBufferNew
+    
     xrt::bo outDegBuffer; // each partition owns one buffer
     xrt::bo outRegBuffer; // each partition owns one buffer
 

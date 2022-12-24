@@ -89,13 +89,16 @@ int acceleratorInit(std::string& file_name,  graphInfo *info, graphAccelerator* 
             info->chunkPropDataNew[j] = acc->propBufferNew[j].map<int*>();
         }
 
-        acc->newBuffer.resize(info->partitionNum);
+        acc->subNewBuffer.resize(info->partitionNum);
+        acc->subBuffer.resize(info->partitionNum);
         for (int p = 0; p < info->partitionNum; p++) {
-            acc->newBuffer[p].resize(SUB_PARTITION_NUM);
+            acc->subNewBuffer[p].resize(SUB_PARTITION_NUM);
+            acc->subBuffer[p].resize(SUB_PARTITION_NUM);
             for (int sp = 0; sp < SUB_PARTITION_NUM; sp++) {
                 int size_tmp = info->chunkProp[p][sp].destVertexNumChunk * sizeof(prop_t);
                 int offset_tmp = p * PARTITION_SIZE * sizeof(prop_t);
-                acc->newBuffer[p][sp] = xrt::bo(acc->propBufferNew[sp], size_tmp, offset_tmp); // size, offset
+                acc->subNewBuffer[p][sp] = xrt::bo(acc->propBufferNew[sp], size_tmp, offset_tmp); // size, offset
+                acc->subBuffer[p][sp] = xrt::bo(acc->propBuffer[sp], size_tmp, offset_tmp);
             }
         }
 
@@ -116,102 +119,105 @@ int acceleratorInit(std::string& file_name,  graphInfo *info, graphAccelerator* 
 
 int acceleratorSuperStep(int superStep, graphInfo *info, graphAccelerator * acc)
 {
-    for (int p = 0; p < info->partitionNum; p++) {
+    for (int p = 0; p < info->partitionNum + 2; p++) {
 
-        for (int sp = 0; sp < SUB_PARTITION_NUM; sp++) {
-            int narg = 0;
-            acc->gsRun[sp] = xrt::run(acc->gsKernel[sp]);
-            acc->gsRun[sp].set_arg(narg++, acc->edgeBuffer[p][sp]);
-            acc->gsRun[sp].set_arg(narg++, acc->propBuffer[sp]);
-            acc->gsRun[sp].set_arg(narg++, acc->tempBuffer[p][sp]);
+        if (p == 0) { // first partition, only start GS kernel;
+            // GathS kernel start
+            for (int sp = 0; sp < SUB_PARTITION_NUM; sp++) {
+                if (superStep % 2 == 0) {
+                    acc->gsRun[sp].set_arg(1, acc->propBuffer[sp]);
+                } else {
+                    acc->gsRun[sp].set_arg(1, acc->propBufferNew[sp]);
+                }
+                acc->gsRun[sp].set_arg(0, acc->edgeBuffer[p][sp]);
+                acc->gsRun[sp].set_arg(2, acc->tempBuffer[p][sp]);
+                acc->gsRun[sp].set_arg(3, info->chunkProp[p][sp].edgeNumChunk * 2);
+                acc->gsRun[sp].start();
+            }
 
-            // if (superStep % 2 == 0) {
-            //     acc->gsRun[j].set_arg(narg++, acc->propBuffer[j]);
-            //     acc->gsRun[j].set_arg(narg++, acc->tempBuffer[j]);
-            // } else {
-            //     acc->gsRun[j].set_arg(narg++, acc->tempBuffer[j]);
-            //     acc->gsRun[j].set_arg(narg++, acc->propBuffer[j]);
-            // }
-            acc->gsRun[sp].set_arg(narg++, info->chunkProp[p][sp].edgeNumChunk * 2);
-            acc->gsRun[sp].set_arg(narg++, 0);
-            acc->gsRun[sp].set_arg(narg++, info->alignedCompressedVertexNum);
-            acc->gsRun[sp].start();
+        } else if (p < info->partitionNum + 1) {
+            // GS kernel wait
+            for (int sp = 0; sp < SUB_PARTITION_NUM; sp++) {
+                acc->gsRun[sp].wait(); }
+            
+            if (p < info->partitionNum) {
+                // GS kernel start
+                for (int sp = 0; sp < SUB_PARTITION_NUM; sp++) {
+                    if (superStep % 2 == 0) {
+                        acc->gsRun[sp].set_arg(1, acc->propBuffer[sp]);
+                    } else {
+                        acc->gsRun[sp].set_arg(1, acc->propBufferNew[sp]);
+                    }
+                    acc->gsRun[sp].set_arg(0, acc->edgeBuffer[p][sp]);
+                    acc->gsRun[sp].set_arg(2, acc->tempBuffer[p][sp]);
+                    acc->gsRun[sp].set_arg(3, info->chunkProp[p][sp].edgeNumChunk * 2);
+                    acc->gsRun[sp].start();
+                }
+            }
+
+            if (p > 1) {
+                // Apply kernel wait
+                for (int sp = 0; sp < SUB_PARTITION_NUM; sp++) {
+                    acc->readRun[sp].wait(); }
+                for (int sp = 0; sp < SUB_PARTITION_NUM - 1; sp++) {
+                    acc->mergeRun[sp].wait(); }
+                acc->applyRun.wait();
+                for (int sp = 0; sp < SUB_PARTITION_NUM - 1; sp++) {
+                    acc->forwardRun[sp].wait(); }
+                for (int sp = 0; sp < SUB_PARTITION_NUM; sp++) {
+                    acc->writeRun[sp].wait(); }
+            }
+
+            // Apply kernel start
+            for (int sp = 0; sp < SUB_PARTITION_NUM; sp++) {
+                acc->readRun[sp].set_arg(0, acc->tempBuffer[p-1][sp]);
+                acc->readRun[sp].set_arg(2, info->chunkProp[p-1][sp].destVertexNumChunk);
+                acc->readRun[sp].start();
+            }
+
+            for (int sp = 0; sp < SUB_PARTITION_NUM - 1; sp++) {
+                acc->mergeRun[sp].set_arg(3, 0); // dest = 0;
+                acc->mergeRun[sp].set_arg(4, info->chunkProp[p-1][sp].destVertexNumChunk);
+                acc->mergeRun[sp].start();
+            }
+
+            if (superStep % 2 == 0) {
+                acc->applyRun.set_arg(0, acc->propBuffer[0]);
+            } else {
+                acc->applyRun.set_arg(0, acc->propBufferNew[0]);
+            }
+            acc->applyRun.set_arg(5, info->chunkProp[p-1][0].destVertexNumChunk); // depends on which SLR
+            acc->applyRun.start();
+
+            for (int sp = 0; sp < SUB_PARTITION_NUM - 1; sp++) {
+                acc->forwardRun[sp].set_arg(3, 1); // dest = 1;
+                acc->forwardRun[sp].set_arg(4, info->chunkProp[p-1][sp].destVertexNumChunk);
+                acc->forwardRun[sp].start();
+            }
+
+            for (int sp = 0; sp < SUB_PARTITION_NUM; sp++) {
+                if (superStep % 2 == 0) {
+                    acc->writeRun[sp].set_arg(0, acc->subNewBuffer[p-1][sp]);
+                } else {
+                    acc->writeRun[sp].set_arg(0, acc->subBuffer[p-1][sp]);
+                }
+                acc->writeRun[sp].set_arg(2, info->chunkProp[p-1][sp].destVertexNumChunk);
+                acc->writeRun[sp].start();
+            }
+
+        } else { // wait last apply kernel end
+            // Apply kernel wait
+            for (int sp = 0; sp < SUB_PARTITION_NUM; sp++) {
+                acc->readRun[sp].wait(); }
+            for (int sp = 0; sp < SUB_PARTITION_NUM - 1; sp++) {
+                acc->mergeRun[sp].wait(); }
+            acc->applyRun.wait();
+            for (int sp = 0; sp < SUB_PARTITION_NUM - 1; sp++) {
+                acc->forwardRun[sp].wait(); }
+            for (int sp = 0; sp < SUB_PARTITION_NUM; sp++) {
+                acc->writeRun[sp].wait(); }
         }
-
-        for (int k = 0; k < SUB_PARTITION_NUM; k++) {
-            acc->gsRun[k].wait();
-
-            // acc->tempBuffer[i][k].sync(XCL_BO_SYNC_BO_FROM_DEVICE);
-            // // acc->propBuffer[k].sync(XCL_BO_SYNC_BO_FROM_DEVICE);
-            // for (int size = 0; size < info->chunkProp[i][k].destVertexNumChunk; size++) {
-            //     std::cout <<" ["<< k << "]["<< size << "]:" << info->chunkTempData[i][k][size];
-            //     if ((size + 1) % 5 == 0) std::cout << std::endl;
-            // }
-
-        }
-
     }
-
-#if USE_APPLY
-
-    for (int p = 0; p < info->partitionNum; p++) {
-        for (int sp = 0; sp < SUB_PARTITION_NUM - 1; sp++) {
-            acc->readRun[sp] = xrt::run(acc->readKernel[sp]);
-            acc->readRun[sp].set_arg(0, acc->tempBuffer[p][sp]);
-            acc->readRun[sp].set_arg(2, info->chunkProp[p][sp].destVertexNumChunk);
-            acc->mergeRun[sp] = xrt::run(acc->mergeKernel[sp]);
-            acc->mergeRun[sp].set_arg(3, 0); // dest = 0;
-            acc->mergeRun[sp].set_arg(4, info->chunkProp[p][sp].destVertexNumChunk);
-            acc->forwardRun[sp] = xrt::run(acc->forwardKernel[sp]);
-            acc->forwardRun[sp].set_arg(3, 1); // dest = 1;
-            acc->forwardRun[sp].set_arg(4, info->chunkProp[p][sp].destVertexNumChunk);
-            acc->writeRun[sp] = xrt::run(acc->writeKernel[sp]);
-            acc->writeRun[sp].set_arg(0, acc->newBuffer[p][sp]); // need to add offset
-            acc->writeRun[sp].set_arg(2, info->chunkProp[p][sp].destVertexNumChunk);
-        }
-
-        acc->readRun[SUB_PARTITION_NUM - 1] = xrt::run(acc->readKernel[SUB_PARTITION_NUM - 1]);
-        acc->readRun[SUB_PARTITION_NUM - 1].set_arg(0, acc->tempBuffer[p][SUB_PARTITION_NUM - 1]);
-        acc->readRun[SUB_PARTITION_NUM - 1].set_arg(2, info->chunkProp[p][SUB_PARTITION_NUM - 1].destVertexNumChunk);
-        acc->applyRun = xrt::run(acc->applyKernel);
-        acc->applyRun.set_arg(0, acc->propBuffer[0]); // depends on which SLR
-        acc->applyRun.set_arg(3, acc->outDegBuffer);
-        acc->applyRun.set_arg(4, acc->outRegBuffer);
-        acc->applyRun.set_arg(5, info->chunkProp[p][0].destVertexNumChunk); // depends on which SLR
-        acc->applyRun.set_arg(6, 0);
-        acc->applyRun.set_arg(7, 0);
-        acc->writeRun[SUB_PARTITION_NUM - 1] = xrt::run(acc->writeKernel[SUB_PARTITION_NUM - 1]);
-        acc->writeRun[SUB_PARTITION_NUM - 1].set_arg(0, acc->newBuffer[p][SUB_PARTITION_NUM - 1]); // need to add offset
-        acc->writeRun[SUB_PARTITION_NUM - 1].set_arg(2, info->chunkProp[p][SUB_PARTITION_NUM - 1].destVertexNumChunk);
-
-//================= Apply kernel start ================
-
-        for (int sp = 0; sp < SUB_PARTITION_NUM; sp++) {
-            acc->readRun[sp].start(); }
-        for (int sp = 0; sp < SUB_PARTITION_NUM - 1; sp++) {
-            acc->mergeRun[sp].start(); }
-        acc->applyRun.start();
-        for (int sp = 0; sp < SUB_PARTITION_NUM - 1; sp++) {
-            acc->forwardRun[sp].start(); }
-        for (int sp = 0; sp < SUB_PARTITION_NUM; sp++) {
-            acc->writeRun[sp].start(); }
-
-//================= Apply kernel wait ================
-
-        for (int sp = 0; sp < SUB_PARTITION_NUM; sp++) {
-            acc->readRun[sp].wait(); }
-        for (int sp = 0; sp < SUB_PARTITION_NUM - 1; sp++) {
-            acc->mergeRun[sp].wait(); }
-        acc->applyRun.wait();
-        for (int sp = 0; sp < SUB_PARTITION_NUM - 1; sp++) {
-            acc->forwardRun[sp].wait(); }
-        for (int sp = 0; sp < SUB_PARTITION_NUM; sp++) {
-            acc->writeRun[sp].wait(); }
-
-    }
-
-#endif
-
     return 0;
 }
 
@@ -240,9 +246,7 @@ void partitionTransfer(graphInfo *info, graphAccelerator * acc)
     acc->outDegBuffer.sync(XCL_BO_SYNC_BO_TO_DEVICE);
     for (int i = 0; i < info->partitionNum; i++) {
         for (int j = 0; j < SUB_PARTITION_NUM; j++) {
-            // acc->propBuffer[j].write(info->chunkPropData[j]);
             acc->propBuffer[j].sync(XCL_BO_SYNC_BO_TO_DEVICE);
-            acc->tempBuffer[i][j].sync(XCL_BO_SYNC_BO_TO_DEVICE);
             acc->edgeBuffer[i][j].sync(XCL_BO_SYNC_BO_TO_DEVICE);
         }
     }
@@ -250,22 +254,76 @@ void partitionTransfer(graphInfo *info, graphAccelerator * acc)
     std::cout << "[INFO] Sync data (prop, temp, edge, outDeg) to device " << std::endl;
 }
 
+void setAccKernelArgs(graphInfo *info, graphAccelerator * acc)
+{
+    for (int p = 0; p < info->partitionNum; p++) {
+        for (int sp = 0; sp < SUB_PARTITION_NUM; sp++) {
+            acc->gsRun[sp] = xrt::run(acc->gsKernel[sp]);
+            // acc->gsRun[sp].set_arg(0, acc->edgeBuffer[p][sp]);
+            // // acc->gsRun[sp].set_arg(1, acc->propBuffer[sp]);
+            // acc->gsRun[sp].set_arg(2, acc->tempBuffer[p][sp]);
+            // acc->gsRun[sp].set_arg(3, info->chunkProp[p][sp].edgeNumChunk * 2);
+            acc->gsRun[sp].set_arg(4, 0);
+            acc->gsRun[sp].set_arg(5, info->alignedCompressedVertexNum);
+        }
+    }
+
+#if USE_APPLY
+
+    for (int p = 0; p < info->partitionNum; p++) {
+        for (int sp = 0; sp < SUB_PARTITION_NUM - 1; sp++) {
+            acc->readRun[sp] = xrt::run(acc->readKernel[sp]);
+            // acc->readRun[sp].set_arg(0, acc->tempBuffer[p][sp]);
+            // acc->readRun[sp].set_arg(2, info->chunkProp[p][sp].destVertexNumChunk);
+            acc->mergeRun[sp] = xrt::run(acc->mergeKernel[sp]);
+            // acc->mergeRun[sp].set_arg(3, 0); // dest = 0;
+            // acc->mergeRun[sp].set_arg(4, info->chunkProp[p][sp].destVertexNumChunk);
+            acc->forwardRun[sp] = xrt::run(acc->forwardKernel[sp]);
+            // acc->forwardRun[sp].set_arg(3, 1); // dest = 1;
+            // acc->forwardRun[sp].set_arg(4, info->chunkProp[p][sp].destVertexNumChunk);
+            acc->writeRun[sp] = xrt::run(acc->writeKernel[sp]);
+            // acc->writeRun[sp].set_arg(0, acc->newBuffer[p][sp]); // need to add offset
+            // acc->writeRun[sp].set_arg(2, info->chunkProp[p][sp].destVertexNumChunk);
+        }
+
+        acc->readRun[SUB_PARTITION_NUM - 1] = xrt::run(acc->readKernel[SUB_PARTITION_NUM - 1]);
+        // acc->readRun[SUB_PARTITION_NUM - 1].set_arg(0, acc->tempBuffer[p][SUB_PARTITION_NUM - 1]);
+        // acc->readRun[SUB_PARTITION_NUM - 1].set_arg(2, info->chunkProp[p][SUB_PARTITION_NUM - 1].destVertexNumChunk);
+        acc->applyRun = xrt::run(acc->applyKernel);
+        // acc->applyRun.set_arg(0, acc->propBuffer[0]);
+        acc->applyRun.set_arg(3, acc->outDegBuffer);
+        acc->applyRun.set_arg(4, acc->outRegBuffer);
+        // acc->applyRun.set_arg(5, info->chunkProp[p][0].destVertexNumChunk); // depends on which SLR
+        acc->applyRun.set_arg(6, 0);
+        acc->applyRun.set_arg(7, 0);
+        acc->writeRun[SUB_PARTITION_NUM - 1] = xrt::run(acc->writeKernel[SUB_PARTITION_NUM - 1]);
+        // acc->writeRun[SUB_PARTITION_NUM - 1].set_arg(0, acc->subNewBuffer[p][SUB_PARTITION_NUM - 1]); // need to add offset
+        // acc->writeRun[SUB_PARTITION_NUM - 1].set_arg(2, info->chunkProp[p][SUB_PARTITION_NUM - 1].destVertexNumChunk);
+    }
+
+#endif
+
+    std::cout << "[INFO] Set Initial Kernel args done" << std::endl;
+
+}
+
 void resultTransfer(graphInfo *info, graphAccelerator * acc, int run_counter)
 {
     // Transfer device buffer content to host side
     acc->outRegBuffer.sync(XCL_BO_SYNC_BO_FROM_DEVICE);
-    for (int p = 0; p < info->partitionNum; p++) {
-        for (int sp = 0; sp < SUB_PARTITION_NUM; sp++) {
-
-            acc->tempBuffer[p][sp].sync(XCL_BO_SYNC_BO_FROM_DEVICE); // need to modify, newBuffer
-
-            // for (int size = 0; size < info->chunkProp[p][sp].destVertexNumChunk; size++) {
-            //     std::cout << "[" << p <<"]["<< sp << "]["<< size << "]:" << info->chunkTempData[p][sp][size];
-            //     if ((size + 1) % 5 == 0) std::cout << std::endl;
-            // }
-
-            // std::cout << std::endl;
+    for (int sp = 0; sp < SUB_PARTITION_NUM; sp++) {
+        if (run_counter % 2 == 0) {
+            acc->propBufferNew[sp].sync(XCL_BO_SYNC_BO_FROM_DEVICE);
+        } else {
+            acc->propBuffer[sp].sync(XCL_BO_SYNC_BO_FROM_DEVICE);
         }
+
+        // for (int size = 0; size < info->chunkProp[p][sp].destVertexNumChunk; size++) {
+        //     std::cout << "[" << p <<"]["<< sp << "]["<< size << "]:" << info->chunkTempData[p][sp][size];
+        //     if ((size + 1) % 5 == 0) std::cout << std::endl;
+        // }
+
+        // std::cout << std::endl;
     }
     std::cout << "[INFO] Sync data (temp, outReg) to host " << std::endl;
 

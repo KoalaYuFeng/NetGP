@@ -48,6 +48,9 @@ int main(int argc, char **argv) {
     // transfer host data to FPGA side
     partitionTransfer(&graphDataInfo, &thunderGraph);
 
+    // set acclerator kernel args.
+    setAccKernelArgs(&graphDataInfo, &thunderGraph);
+
     // super step execution : set args and kernel run 
 
     int super_step_num = 100;

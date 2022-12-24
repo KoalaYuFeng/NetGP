@@ -50,6 +50,7 @@ int dataPrepareProperty(graphInfo *info);
 double getCurrentTimestamp(void);
 void reTransferProp(graphInfo *info);
 void partitionTransfer(graphInfo *info, graphAccelerator *acc);
+void setAccKernelArgs(graphInfo *info, graphAccelerator *acc);
 void resultTransfer(graphInfo *info, graphAccelerator *acc, int);
 
 /* host api -- dataflow */
