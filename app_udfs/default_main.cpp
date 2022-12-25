@@ -15,11 +15,10 @@
 
 using namespace std;
 
-graphInfo graphDataInfo;
-
-graphAccelerator thunderGraph;
-
 int main(int argc, char **argv) {
+
+    graphInfo graphDataInfo;
+    graphAccelerator thunderGraph;
 
     sda::utils::CmdLineParser parser;
 
@@ -73,21 +72,23 @@ int main(int argc, char **argv) {
     resultTransfer(&graphDataInfo, &thunderGraph, super_step_num);
 
     // release memory resource
-    int partition_num = graphDataInfo.partitionNum;
+    // for (int p = 0; p < graphDataInfo.partitionNum; p++) {
+    //     for (int sp = 0; sp < SUB_PARTITION_NUM; sp++) {
+    //         delete [] graphDataInfo.chunkEdgeData[p][sp];
+    //         delete [] graphDataInfo.chunkTempData[p][sp];
+    //     }
+    // }
+    // std::cout << "[INFO] Release Edge and Temp data finish" <<std::endl;
 
-    for (int j = 0; j < SUB_PARTITION_NUM; j++) {
-        for (int i = 0; i < partition_num; i++) {
-            delete[] graphDataInfo.chunkEdgeData[i][j];
-            delete[] graphDataInfo.chunkTempData[i][j];
-            std::cout << "edge data release finish" <<std::endl;
-        }
-        delete[] graphDataInfo.chunkPropData[j];
-        std::cout << "temp prop data release finish" <<std::endl;
-    }
+    // for (int sp = 0; sp < SUB_PARTITION_NUM; sp++) {
+    //     delete [] graphDataInfo.chunkPropDataNew[sp];
+    //     delete [] graphDataInfo.chunkPropData[sp];
+    // }
+    // std::cout << "[INFO] Release Prop data finish" <<std::endl;
 
-    delete[] graphDataInfo.chunkOutDegData;
-    delete[] graphDataInfo.chunkOutRegData;
-    std::cout << "outdeg and reg data release finish" <<std::endl;
+    // delete [] graphDataInfo.chunkOutDegData;
+    // delete [] graphDataInfo.chunkOutRegData;
+    // std::cout << "[INFO] Release Outdeg and Outreg data finish" <<std::endl;
 
     return 0;
 }
