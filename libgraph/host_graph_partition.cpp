@@ -1,6 +1,5 @@
 
 #include "host_graph_sw.h"
-#include "host_graph_mem.h"
 #include "host_graph_scheduler.h"
 #include <map>
 #include <algorithm>

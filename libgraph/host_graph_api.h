@@ -64,6 +64,4 @@ int acceleratorDeinit(void);
 void* acceleratorQueryRegister(void);
 prop_t* acceleratorQueryProperty(int step);
 
-#include "host_graph_csv.hpp"
-
 #endif /* __HOST_GRAPH_API_H__ */

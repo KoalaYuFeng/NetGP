@@ -43,11 +43,7 @@ endif
 
 HOST_SRCS += ./common/includes/cmdparser/cmdlineparser.cpp
 HOST_SRCS += ./common/includes/logger/logger.cpp
-HOST_SRCS += ./libgraph/memory/he_mem.cpp
-HOST_SRCS += ./libgraph/memory/he_mapping.cpp
-HOST_SRCS += ./libgraph/misc/host_graph_mem.cpp
 HOST_SRCS += ./libgraph/host_graph_partition.cpp
-HOST_SRCS += ./libgraph/kernel/host_graph_kernel.cpp
 HOST_SRCS += ./libgraph/host_graph_dataflow.cpp
 HOST_SRCS += ./libgraph/scheduler/host_graph_scheduler.cpp
 HOST_SRCS += ./libgraph/scheduler/$(SCHEDULER)/scheduler.cpp

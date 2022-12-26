@@ -11,8 +11,8 @@
 
 
 void partitionApplyCModel(
-    cl_context              &context,
-    cl_device_id            &device,
+    // cl_context              &context,
+    // cl_device_id            &device,
     int                     superStep,
     int                     partId,
     unsigned int            applyArg
