@@ -1,4 +1,3 @@
-#include "cmdlineparser.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
@@ -6,19 +5,13 @@
 #include <assert.h>
 #include <unistd.h>
 #include <iostream>
-#include <chrono>
-#include <cstdlib>
-
-// XRT includes
-#include "experimental/xrt_bo.h"
-#include "experimental/xrt_device.h"
-#include "experimental/xrt_kernel.h"
 
 #define NUM_PROC 2 // for 2 processors;
 
 void GS_Execute (int id, int partition) {
     std::cout << "GS Execution at processor " << id << " partition " << partition << " begin ...";
     // add GS execution code
+    
     std::cout << " ... end" << std::endl;
 }
 

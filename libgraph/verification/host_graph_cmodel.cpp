@@ -192,5 +192,5 @@ int acceleratorCModelSuperStep(int superStep, graphInfo *info)
 //     DEBUG_PRINTF("total cmodel error: %d\n", error_count);
 //     memcpy(propValue, updateVerify, (get_he_mem(MEM_ID_HOST_PROP_PONG)->size));
 // #endif
-//     return 0;
+    return 0;
 }
