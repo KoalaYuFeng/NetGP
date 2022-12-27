@@ -6,50 +6,66 @@
 #include <unistd.h>
 #include <iostream>
 
+#define NUM_PROC 2 // for 2 processors;
 
-void GS_run (int id, int partition) {
-  usleep(50000); // replace it with GS execution code.
-  std::cout << "Gs run at processor " << id << " partition " << partition << std::endl;
+void GS_Execute (int id, int partition) {
+    std::cout << "GS Execution at processor " << id << " partition " << partition << " begin ...";
+    // add GS execution code
+    
+    std::cout << " ... end" << std::endl;
 }
 
 int main(int argc, char** argv) {
 
-  int num_elements_per_proc = 2; // for two processor;
+    MPI_Init(NULL, NULL);
 
-  MPI_Init(NULL, NULL);
+    int world_rank;
+    MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
+    int world_size;
+    MPI_Comm_size(MPI_COMM_WORLD, &world_size);
 
-  int world_rank;
-  MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
-  int world_size;
-  MPI_Comm_size(MPI_COMM_WORLD, &world_size);
+    std::cout << "function start at " << world_rank << " in " << world_size << std::endl;
 
-  std::cout << "function start at " << world_rank << " in " << world_size << std::endl;
+    int p_iteration = 10; // overall partition number;
+    int p_recv[1] = {-1}; // received partition id;
+    int p_id_tx[NUM_PROC] = {0}; // partition id for sending in root node, start at partition 0;
 
-  int p_iteration = 10; // overall partition number;
-  int p_recv[1] = {-1}; // received partition id;
-  int p_id_tx[2] = {0, 0}; // partition id for sending in root node, start at partition 0;
+    for (int p_idx = 0; p_idx < p_iteration;) {
 
-  for (int p = 0; p < p_iteration;) {
+        MPI_Scatter(p_id_tx, 1, MPI_INT, p_recv, 1, MPI_INT, 0, MPI_COMM_WORLD);
 
-    MPI_Scatter(p_id_tx, 1, MPI_INT, p_recv, 1, MPI_INT, 0, MPI_COMM_WORLD);
+        GS_Execute(world_rank, p_recv[0]); // doing GS operation in each partition;
 
-    GS_run(world_rank, p_recv[0]);
+        // std::cout << "Sync partition [" << p_idx << "] ...";
+        int p_temp_rx[NUM_PROC];
+        for (int i = 0; i < NUM_PROC; i++) {
+            p_temp_rx[i] = -1;
+        }
+        MPI_Gather(&(p_recv[0]), 1, MPI_INT, p_temp_rx, 1, MPI_INT, 0, MPI_COMM_WORLD); // * sync operation *
+        // std::cout << " Done." << std::endl;
 
-    int p_temp_rx[2] = {-1};
-    MPI_Gather(&(p_recv[0]), 1, MPI_INT, p_temp_rx, 1, MPI_INT, 0, MPI_COMM_WORLD); // * sync operation *
+        if (world_rank == 0) { // for root node
+            bool align = true;
+            for (int i = 0; i < NUM_PROC - 1; i++) {
+                if (p_temp_rx[i] != p_temp_rx[i+1]) align = false;
+            }
+            if (align) { // check whether receive the right partition id;
+                for (int i = 0; i < NUM_PROC; i++) {
+                    p_id_tx[i]++;
+                }
+                p_idx++;
+            } else {
+                std::cout << "[INFO] ASYNC occur in nodes" << std::endl;
+                for (int i = 0; i < NUM_PROC; i++) {
+                    std::cout << "Node[" << i << "] 's p_temp_rx is " << p_temp_rx[i] << std::endl;
+                }
+            }
+        } else { // for other nodes
+            p_idx++;
+        }
 
-    if (world_rank == 0) {
-      if (p_temp_rx[0] == p_temp_rx[1]) { // check whether receive the right partition id;
-        p_id_tx[0]++;
-        p_id_tx[1]++;
-        p++;
-      }
-    } else {
-      p++;
     }
 
-  }
-
-  MPI_Barrier(MPI_COMM_WORLD);
-  MPI_Finalize();
+    MPI_Barrier(MPI_COMM_WORLD);
+    MPI_Finalize();
 }
