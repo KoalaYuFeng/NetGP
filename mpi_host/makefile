@@ -14,7 +14,7 @@ include $(APPCONFIG)/apply_kernel.mk
 
 HOST_SRCS = ../libgraph/misc/graph.cpp ../libgraph/misc/data_helper.cpp
 
-HOST_SRCS +=  ./mpi_exe.cpp
+HOST_SRCS +=  ./mpi_host.cpp
 
 HOST_SRCS += ../common/includes/cmdparser/cmdlineparser.cpp
 HOST_SRCS += ../common/includes/logger/logger.cpp
