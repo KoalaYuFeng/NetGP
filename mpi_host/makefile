@@ -15,11 +15,13 @@ include $(APPCONFIG)/apply_kernel.mk
 HOST_SRCS = ../libgraph/misc/graph.cpp ../libgraph/misc/data_helper.cpp
 
 HOST_SRCS +=  ./mpi_host.cpp
+HOST_SRCS += ./mpi_graph_partition.cpp
+HOST_SRCS += ./mpi_graph_dataflow.cpp
+# HOST_SRCS += ../libgraph/host_graph_partition.cpp
+# HOST_SRCS += ../libgraph/host_graph_dataflow.cpp
 
 HOST_SRCS += ../common/includes/cmdparser/cmdlineparser.cpp
 HOST_SRCS += ../common/includes/logger/logger.cpp
-HOST_SRCS += ../libgraph/host_graph_partition.cpp
-HOST_SRCS += ../libgraph/host_graph_dataflow.cpp
 HOST_SRCS += ../libgraph/verification/host_graph_cmodel.cpp
 HOST_SRCS += ../libgraph/verification/host_graph_verification_apply.cpp
 HOST_SRCS += ../libgraph/verification/host_graph_verification_gs.cpp
@@ -39,7 +41,8 @@ CXXFLAGS += -I ../common/includes/logger
 # application specific parameter
 CXXFLAGS += -DSUB_PARTITION_NUM=$(SUB_PARTITION_NUM)
 CXXFLAGS += -DPARTITION_SIZE=$(PARTITION_SIZE)
-CXXFLAGS  += -DAPPLY_REF_ARRAY_SIZE=$(APPLY_REF_ARRAY_SIZE)
+CXXFLAGS += -DAPPLY_REF_ARRAY_SIZE=$(APPLY_REF_ARRAY_SIZE)
+CXXFLAGS += -DPROCESSOR_NUM=$(PROCESSOR_NUM)
 
 CXXFLAGS += -I$(XILINX_XRT)/include -I$(XILINX_VIVADO)/include -Wall
 CXXFLAGS += -I/$(XILINX_HLS)/Vivado_HLS/include/ -O3 -g -fmessage-length=0 -std=c++14 -Wno-deprecated-declarations
