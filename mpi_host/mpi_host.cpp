@@ -102,16 +102,8 @@ int main(int argc, char** argv) {
     auto start_kernel = chrono::steady_clock::now();
 
     for (int s = 0; s < super_step; s++) {
-
-        int p_recv[1] = {-1}; // received partition id;
-        int p_id_tx[PROCESSOR_NUM] = {0}; // partition id for sending in root node, start at partition 0;
-
-        for (int p_idx = 0; p_idx < graphDataInfo.partitionNum;) { // for each partition
-
-            MPI_Scatter(p_id_tx, 1, MPI_INT, p_recv, 1, MPI_INT, 0, MPI_COMM_WORLD);
-
-            int result = GS_Execute(world_rank, p_recv[0], &graphDataInfo, &thunderGraph); // proc_id, partition_id, graph_info, acc_info;
-
+        for (int p_idx = 0; p_idx < graphDataInfo.partitionNum; p_idx++) { // for each partition
+            int result = GS_Execute(world_rank, p_idx, &graphDataInfo, &thunderGraph); // proc_id, partition_id, graph_info, acc_info;
             // std::cout << "Sync partition [" << p_idx << "] ...";
             int p_temp_rx[PROCESSOR_NUM];
             for (int i = 0; i < PROCESSOR_NUM; i++) {
@@ -119,29 +111,19 @@ int main(int argc, char** argv) {
             }
             MPI_Gather(&(result), 1, MPI_INT, p_temp_rx, 1, MPI_INT, 0, MPI_COMM_WORLD); // * sync operation *
             // std::cout << " Done." << std::endl;
-
             if (world_rank == 0) { // for root node
                 bool align = true;
                 for (int i = 0; i < PROCESSOR_NUM - 1; i++) {
                     if (p_temp_rx[i] != p_temp_rx[i+1]) align = false;
                 }
-                if (align) { // check whether receive the right partition id;
-                    for (int i = 0; i < PROCESSOR_NUM; i++) {
-                        p_id_tx[i]++;
-                    }
-                    p_idx++;
-                } else {
+                if (!align) {
                     std::cout << "[INFO] ASYNC occur in nodes" << std::endl;
                     for (int i = 0; i < PROCESSOR_NUM; i++) {
                         std::cout << "Node[" << i << "] 's p_temp_rx is " << p_temp_rx[i] << std::endl;
                     }
                 }
-            } else { // for other nodes
-                p_idx++;
             }
-
         }
-
     }
 
     auto end = chrono::steady_clock::now();
