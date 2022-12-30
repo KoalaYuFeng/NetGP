@@ -17,6 +17,7 @@ HOST_SRCS = ../libgraph/misc/graph.cpp ../libgraph/misc/data_helper.cpp
 HOST_SRCS +=  ./mpi_host.cpp
 HOST_SRCS += ./mpi_graph_partition.cpp
 HOST_SRCS += ./mpi_graph_dataflow.cpp
+HOST_SRCS += ./mpi_network.cpp
 # HOST_SRCS += ../libgraph/host_graph_partition.cpp
 # HOST_SRCS += ../libgraph/host_graph_dataflow.cpp
 

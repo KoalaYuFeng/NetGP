@@ -11,6 +11,7 @@
 
 #include "host_graph_api.h"
 #include "mpi_host.h"
+#include "mpi_network.h"
 
 // XRT includes
 #include "experimental/xrt_bo.h"
@@ -49,7 +50,7 @@ int main(int argc, char** argv) {
 
     MPI_Init(NULL, NULL);
 
-    int world_rank;
+    int world_rank; // assume rank = 0 is the root node.
     MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
     int world_size;
     MPI_Comm_size(MPI_COMM_WORLD, &world_size);
@@ -60,14 +61,18 @@ int main(int argc, char** argv) {
     graphAccelerator thunderGraph;
 
     sda::utils::CmdLineParser parser;
-
-    // parser.addSwitch("--xclbin_file_1", "-x1", "input binary file string for 1st FPGA", "");
-    // parser.addSwitch("--xclbin_file_2", "-x2", "input binary file string for 2nd FPGA", "");
     parser.addSwitch("--dataset", "-d", "dataset name", "HW"); // using HW dataset as default
     parser.parse(argc, argv);
 
     // Read settings
-    std::string binary_file = "./acc_" + std::to_string(world_rank + 1) + ".xclbin";
+    std::string binary_file;
+    if (world_rank == 0) { // root node
+        binary_file = "./acc_root.xclbin";
+    } else if (world_rank == (world_size - 1)) { // last node;
+        binary_file = "./acc_last.xclbin";
+    } else { // middle nodes
+        binary_file = "./acc_node_" + std::to_string(world_rank) + ".xclbin";
+    }
     std::string g_name = parser.value("dataset");
     std::string path_graph_dataset = "/data/binary_graph_dataset/";
     std::cout << "[INFO] Start main" << std::endl;
@@ -75,18 +80,18 @@ int main(int argc, char** argv) {
     // load graph
     acceleratorDataLoad(g_name, path_graph_dataset, &graphDataInfo); // each processor holds full graph.
 
-    // init accelerator
-    acceleratorInit(world_rank, binary_file, &graphDataInfo, &thunderGraph); // init kernel , init buffer , map host and device memory
+    // init accelerator : init network stack, init kernel , init buffer , map host and device memory
+    acceleratorInit(world_rank, world_size, binary_file, &graphDataInfo, &thunderGraph);
 
     // graph data pre-process
     acceleratorDataPreprocess(&graphDataInfo); // data prepare + data partition
     // acceleratorCModelDataPreprocess(&graphDataInfo); // cmodel data preprocess, for verification
 
     // transfer host data to FPGA side
-    partitionTransfer(&graphDataInfo, &thunderGraph);
+    partitionTransfer(world_rank, &graphDataInfo, &thunderGraph);
 
     // set acclerator kernel args.
-    setAccKernelArgs(&graphDataInfo, &thunderGraph);
+    setAccKernelArgs(world_rank, world_size, &graphDataInfo, &thunderGraph);
 
     // need to sync before super step execution
 
@@ -128,6 +133,8 @@ int main(int argc, char** argv) {
 
     auto end = chrono::steady_clock::now();
     std::cout << "Graph kernel process elapses " << (chrono::duration_cast<chrono::microseconds>(end - start_kernel).count())/super_step<< "us" << std::endl;
+
+    // need to add result transfer function
 
     MPI_Barrier(MPI_COMM_WORLD);
     MPI_Finalize();
