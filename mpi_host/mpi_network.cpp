@@ -156,11 +156,11 @@ bool AlveoVnxNetworkLayer::IsARPTableFound(const std::string &dest_ip) {
             ip_addr[2] = (arp_ip &     0xff00) >> 8;
             ip_addr[3] =  arp_ip &       0xff;
 
-            std::cout<< " ARP ip_addr " << ip_addr[3] << '.'  << ip_addr[2] << '.' << ip_addr[1] << '.' << ip_addr[0] << std::endl;
+            // std::cout<< " ARP ip_addr " << ip_addr[3] << '.'  << ip_addr[2] << '.' << ip_addr[1] << '.' << ip_addr[0] << std::endl;
             uint32_t temp = ip_addr[3] * 256 * 256 *256 + ip_addr[2] * 256 * 256 + ip_addr[1] * 256 + ip_addr[0];
             // std::cout << std::hex << " mac_addr " << mac_msb << "..." << mac_lsb << "mac address"<< mac_addr << std::endl; // some problems in MAC address
             if (temp == dest_ip_dec) {
-                std::cout << "arp find dest ip" << dest_ip << std::endl;
+                // std::cout << "arp find dest ip" << dest_ip << std::endl;
                 return true;
             }
         }
