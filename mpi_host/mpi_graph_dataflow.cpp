@@ -40,7 +40,7 @@ int acceleratorInit(int world_rank, int world_size, std::string& file_name,  gra
 
     bool linkStatus = cmac.readRegister("stat_rx_status") & 0x1;
     while(!linkStatus) {
-        std::cout<<"LinkStatus is " << linkStatus <<std::endl;
+        // std::cout<<"LinkStatus is " << linkStatus <<std::endl;
         sleep(1);
         linkStatus = cmac.readRegister("stat_rx_status") & 0x1;
     }
@@ -77,54 +77,6 @@ int acceleratorInit(int world_rank, int world_size, std::string& file_name,  gra
             ARP_ready = netlayer.IsARPTableFound(FPGA_config[world_rank - 1]["ip_addr"]);
         }
         std::cout << "[INFO] Processor " << world_rank << " : ARP ready" << std::endl;
-
-    }
-
-    //check net connection
-    AlveoVnxCmac cmac = AlveoVnxCmac(acc->graphDevice, acc->graphUuid, 1); // 1 for cmac_1
-    AlveoVnxNetworkLayer netlayer = AlveoVnxNetworkLayer(acc->graphDevice, acc->graphUuid, 1); // 1 for netlayer 1
-
-    bool linkStatus = cmac.readRegister("stat_rx_status") & 0x1;
-    while(!linkStatus) {
-        std::cout<<"LinkStatus is " << linkStatus <<std::endl;
-        sleep(1);
-        linkStatus = cmac.readRegister("stat_rx_status") & 0x1;
-    }
-    std::cout<<"[INFO] " << world_rank << " Network connect"<<std::endl;
-
-    if (world_rank == 0) { // root node, send msg to next node
-        netlayer.setAddress(FPGA_config[world_rank]["ip_addr"], FPGA_config[world_rank]["MAC_addr"]);
-        netlayer.setSocket(FPGA_config[world_rank + 1]["ip_addr"], stoi(FPGA_config[world_rank + 1]["tx_port"]), 5001, 0); // set recv socket
-        netlayer.setSocket(FPGA_config[world_rank + 1]["ip_addr"], 5001, stoi(FPGA_config[world_rank]["tx_port"]), 1); // set send socket
-        netlayer.getSocketTable();
-        std::cout << "[INFO] " << world_rank << " socket table set done" << std::endl;
-
-        bool ARP_ready = false;
-        while(!ARP_ready) {
-            std::cout << " ... wait ARP ready!" << std::endl;
-            netlayer.runARPDiscovery();
-            usleep(500000);
-            ARP_ready = netlayer.IsARPTableFound(FPGA_config[world_rank + 1]["ip_addr"]);
-        }
-        std::cout << "[INFO] " << world_rank << " ARP ready" << std::endl;
-
-    } else if (world_rank < world_size - 1) { // middle node, get meg from upper node and send msg to down node
-        // at current stage, only 2 nodes, no middle nodes.
-    } else { // last node:
-        netlayer.setAddress(FPGA_config[world_rank]["ip_addr"], FPGA_config[world_rank]["MAC_addr"]);
-        netlayer.setSocket(FPGA_config[world_rank - 1]["ip_addr"], stoi(FPGA_config[world_rank - 1]["tx_port"]), 5001, 0); // set recv socket
-        netlayer.setSocket(FPGA_config[world_rank - 1]["ip_addr"], 5001, stoi(FPGA_config[world_rank]["tx_port"]), 1); // set send socket
-        netlayer.getSocketTable();
-        std::cout << "[INFO] " << world_rank << " socket table set done" << std::endl;
-
-        bool ARP_ready = false;
-        while(!ARP_ready) {
-            std::cout << " ... wait ARP ready!" << std::endl;
-            netlayer.runARPDiscovery();
-            usleep(500000);
-            ARP_ready = netlayer.IsARPTableFound(FPGA_config[world_rank - 1]["ip_addr"]);
-        }
-        std::cout << "[INFO] " << world_rank << " ARP ready" << std::endl;
 
     }
 
