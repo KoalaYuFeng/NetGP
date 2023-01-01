@@ -40,7 +40,13 @@ extern "C" {
                     = PROP_COMPUTE_STAGE4 ( unit[0].data.range(31 + inner * 32, 0 + inner * 32),
                                             unit[1].data.range(31 + inner * 32, 0 + inner * 32) );
             }
+
+            if (((loopNum - 1) == i) || ((((i + 1)*64)% 1408) == 0))
+                res.last = 1;
+            else
+                res.last = 0;
             res.dest = dest;
+            res.keep = -1;
             write_to_stream(output, res);
         }
     }
