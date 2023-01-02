@@ -21,16 +21,22 @@ extern "C" {
     )
     {
 
-#pragma HLS INTERFACE m_axi port=outReg offset=slave bundle=gmem0
+#pragma HLS INTERFACE m_axi port=outReg offset=slave bundle=gmem0 \
+                        max_read_burst_length=64 num_read_outstanding=32 \
+                        max_write_burst_length=64 num_write_outstanding=32
 #pragma HLS INTERFACE s_axilite port=outReg bundle=control
 
 
-#pragma HLS INTERFACE m_axi port=vertexProp offset=slave bundle=gmem0 max_read_burst_length=64
+#pragma HLS INTERFACE m_axi port=vertexProp offset=slave bundle=gmem0 \
+                        max_read_burst_length=64 num_read_outstanding=32 \
+                        max_write_burst_length=64 num_write_outstanding=32
 #pragma HLS INTERFACE s_axilite port=vertexProp bundle=control
 
 #if HAVE_APPLY_OUTDEG
 
-#pragma HLS INTERFACE m_axi port=outDegree offset=slave bundle=gmem1 max_read_burst_length=64
+#pragma HLS INTERFACE m_axi port=outDegree offset=slave bundle=gmem1 \
+                        max_read_burst_length=64 num_read_outstanding=32 \
+                        max_write_burst_length=64 num_write_outstanding=32
 #pragma HLS INTERFACE s_axilite port=outDegree bundle=control
 
         static hls::stream<burst_raw>      outDegreeStream;

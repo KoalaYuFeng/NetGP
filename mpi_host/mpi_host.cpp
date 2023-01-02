@@ -20,162 +20,6 @@
 
 using namespace std;
 
-// #define PROCESSOR_NUM 2 // for 2 processors;
-
-int GS_Execute (int super_step, int world_rank, int partition, graphInfo *info, graphAccelerator * acc) {
-
-    std::cout << "GS " << super_step << " Execute at processor " << world_rank << " partition " << partition << " begin ...";
-
-    if (partition < 0) return -1; // check the right parition id;
-
-    int p = partition;
-    for (int sp = 0; sp < (SUB_PARTITION_NUM / PROCESSOR_NUM); sp++) {
-        int isp = world_rank + sp * PROCESSOR_NUM;
-        acc->gsRun[sp].set_arg(0, acc->edgeBuffer[p][sp]);
-        acc->gsRun[sp].set_arg(1, acc->propBuffer[sp]);
-        acc->gsRun[sp].set_arg(2, acc->tempBuffer[p][sp]);
-        acc->gsRun[sp].set_arg(3, info->chunkProp[p][isp].edgeNumChunk * 2);
-        acc->gsRun[sp].start();
-    }
-
-    for (int sp = 0; sp < (SUB_PARTITION_NUM / PROCESSOR_NUM); sp++) {
-        acc->gsRun[sp].wait();
-    }
-
-    std::cout << " ... end" << std::endl;
-    return partition;
-}
-
-int APPLY_Execution_start (int world_rank, int world_size, graphInfo *info, graphAccelerator * acc) {
-
-    if (world_rank == 0) { // root node
-        std::cout << "root apply start exe .. " << std::endl;
-        // Apply kernel start
-        for (int sp = 0; sp < (SUB_PARTITION_NUM / PROCESSOR_NUM); sp++) {
-            acc->readRun[sp].set_arg(0, acc->propBuffer[sp]);
-            acc->readRun[sp].set_arg(2, info->alignedCompressedVertexNum);
-            acc->readRun[sp].start();
-        }
-
-        for (int sp = 0; sp < (SUB_PARTITION_NUM / PROCESSOR_NUM); sp++) {
-            acc->mergeRun[sp].set_arg(3, 0); // dest = 0;
-            acc->mergeRun[sp].set_arg(4, info->alignedCompressedVertexNum);
-            acc->mergeRun[sp].start();
-        }
-
-        acc->applyRun.set_arg(0, acc->propBuffer[0]);
-        acc->applyRun.set_arg(5, info->alignedCompressedVertexNum); // depends on which SLR
-        acc->applyRun.start();
-
-        for (int sp = 0; sp < (SUB_PARTITION_NUM / PROCESSOR_NUM); sp++) {
-            acc->forwardRun[sp].set_arg(3, 1); // dest = 1;
-            acc->forwardRun[sp].set_arg(4, info->alignedCompressedVertexNum);
-            acc->forwardRun[sp].start();
-        }
-
-        for (int sp = 0; sp < (SUB_PARTITION_NUM / PROCESSOR_NUM); sp++) {
-            acc->writeRun[sp].set_arg(0, acc->propBufferNew[sp]);
-            acc->writeRun[sp].set_arg(2, info->alignedCompressedVertexNum);
-            acc->writeRun[sp].start();
-        }
-        std::cout << "root node start done" << std::endl;
-    } else if (world_rank < world_size - 1) { // middle node
-    
-    } else { // last node 
-        sleep(5); // wait until root node start done.
-        std::cout << "last node apply start exe .. " << std::endl;
-        for (int sp = 0; sp < (SUB_PARTITION_NUM / PROCESSOR_NUM); sp++) {
-            acc->writeRun[sp].set_arg(0, acc->propBufferNew[sp]);
-            acc->writeRun[sp].set_arg(2, info->alignedCompressedVertexNum);
-            acc->writeRun[sp].start();
-        }
-
-        for (int sp = 0; sp < (SUB_PARTITION_NUM / PROCESSOR_NUM) - 1; sp++) {
-            acc->forwardRun[sp].set_arg(3, 0); // dest = 0;
-            acc->forwardRun[sp].set_arg(4, info->alignedCompressedVertexNum);
-            acc->forwardRun[sp].start();
-        }
-
-        for (int sp = 0; sp < (SUB_PARTITION_NUM / PROCESSOR_NUM); sp++) {
-            acc->readRun[sp].set_arg(0, acc->propBuffer[sp]);
-            acc->readRun[sp].set_arg(2, info->alignedCompressedVertexNum);
-            acc->readRun[sp].start();
-        }
-
-        for (int sp = 0; sp < (SUB_PARTITION_NUM / PROCESSOR_NUM) - 1; sp++) {
-            acc->mergeRun[sp].set_arg(3, 1); // dest = 1;
-            acc->mergeRun[sp].set_arg(4, info->alignedCompressedVertexNum);
-            acc->mergeRun[sp].start();
-        }
-
-        std::cout << "last node start done" << std::endl;
-    }
-    return 0;
-}
-
-int APPLY_Execution_end (int world_rank, int world_size, graphInfo *info, graphAccelerator * acc) {
-
-    if (world_rank == 0) { // root node
-        std::cout << "root node apply wait ..." << std::endl;
-        for (int sp = 0; sp < (SUB_PARTITION_NUM / PROCESSOR_NUM); sp++) {
-            acc->readRun[sp].wait();
-            std::cout << "root read wait done" << std::endl;
-        }
-        
-
-        for (int sp = 0; sp < (SUB_PARTITION_NUM / PROCESSOR_NUM); sp++) {
-            acc->mergeRun[sp].wait();
-            std::cout << "root merge wait done" << std::endl;
-        }
-        
-
-        acc->applyRun.wait();
-        std::cout << "root apply wait done" << std::endl;
-
-        for (int sp = 0; sp < (SUB_PARTITION_NUM / PROCESSOR_NUM); sp++) {
-            acc->forwardRun[sp].wait();
-            std::cout << "root forward wait done" << std::endl;
-        }
-        
-
-        for (int sp = 0; sp < (SUB_PARTITION_NUM / PROCESSOR_NUM); sp++) {
-            acc->writeRun[sp].wait();
-            std::cout << " root node end done" << std::endl;
-        }
-        
-
-    } else if (world_rank < world_size - 1) { // middle node 
-
-    } else { //last node
-
-        std::cout << "last node apply wait ..." << std::endl;
-
-        for (int sp = 0; sp < (SUB_PARTITION_NUM / PROCESSOR_NUM); sp++) {
-            acc->readRun[sp].wait();
-            std::cout << "last read wait done" << std::endl;
-        }
-
-        for (int sp = 0; sp < (SUB_PARTITION_NUM / PROCESSOR_NUM) - 1; sp++) {
-            acc->mergeRun[sp].wait();
-            std::cout << "last merge wait done" << std::endl;
-        }
-        
-
-        for (int sp = 0; sp < (SUB_PARTITION_NUM / PROCESSOR_NUM) - 1; sp++) {
-            acc->forwardRun[sp].wait();
-            std::cout << "last forward wait done" << std::endl;
-        }
-        
-
-        for (int sp = 0; sp < (SUB_PARTITION_NUM / PROCESSOR_NUM); sp++) {
-            acc->writeRun[sp].wait();
-            std::cout << "last write wait done" << std::endl;
-        }
-       
-    }
-
-}
-
 int main(int argc, char** argv) {
 
     MPI_Init(NULL, NULL);
@@ -233,14 +77,16 @@ int main(int argc, char** argv) {
 
     for (int s = 0; s < super_step; s++) {
         for (int p_idx = 0; p_idx < graphDataInfo.partitionNum; p_idx++) { // for each partition
-            int result = GS_Execute(s, world_rank, p_idx, &graphDataInfo, &thunderGraph); // proc_id, partition_id, graph_info, acc_info;
+            int result = accGatherScatterExecute(s, world_rank, p_idx, &graphDataInfo, &thunderGraph); // proc_id, partition_id, graph_info, acc_info;
             // std::cout << "Sync partition [" << p_idx << "] ...";
 
-            int p_temp_rx[PROCESSOR_NUM];
-            for (int i = 0; i < PROCESSOR_NUM; i++) {
-                p_temp_rx[i] = -1;
-            }
-            MPI_Gather(&(result), 1, MPI_INT, p_temp_rx, 1, MPI_INT, 0, MPI_COMM_WORLD); // * no need to sync, just like aw-barrier *
+            MPI_Barrier(MPI_COMM_WORLD); // sync barrier;
+
+            // int p_temp_rx[PROCESSOR_NUM];
+            // for (int i = 0; i < PROCESSOR_NUM; i++) {
+            //     p_temp_rx[i] = -1;
+            // }
+            // MPI_Gather(&(result), 1, MPI_INT, p_temp_rx, 1, MPI_INT, 0, MPI_COMM_WORLD); // * no need to sync, just like aw-barrier *
             // std::cout << " Done." << std::endl;
             // if (world_rank == 0) { // for root node
             //     bool align = true;
@@ -255,11 +101,19 @@ int main(int argc, char** argv) {
             //     }
             // }
         }
+
+        MPI_Barrier(MPI_COMM_WORLD); // sync barrier;
+
+        if (world_rank != (world_size - 1)) {
+            accApplyStart (world_rank, world_size, &graphDataInfo, &thunderGraph);} // except last node
+
+        MPI_Barrier(MPI_COMM_WORLD); // sync barrier;
+
+        if (world_rank == (world_size - 1)) {
+            accApplyStart (world_rank, world_size, &graphDataInfo, &thunderGraph);} // last node start
+
+        accApplyEnd (world_rank, world_size, &graphDataInfo, &thunderGraph); // wait kernle done;
     }
-
-    // int result = APPLY_Execution_start (world_rank, world_size, &graphDataInfo, &thunderGraph);
-
-    // result = APPLY_Execution_end (world_rank, world_size, &graphDataInfo, &thunderGraph);
 
     auto end = chrono::steady_clock::now();
     std::cout << "Graph kernel process elapses " << (chrono::duration_cast<chrono::microseconds>(end - start_kernel).count())/super_step<< "us" << std::endl;

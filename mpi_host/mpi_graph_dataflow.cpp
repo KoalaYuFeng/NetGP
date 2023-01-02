@@ -197,128 +197,152 @@ int acceleratorInit(int world_rank, int world_size, std::string& file_name,  gra
     return 0;
 }
 
-int acceleratorSuperStep(int superStep, graphInfo *info, graphAccelerator * acc)
-{
-    for (int p = 0; p < info->partitionNum + 2; p++) {
+int accGatherScatterExecute (int super_step, int world_rank, int partition, graphInfo *info, graphAccelerator * acc) {
 
-        if (p == 0) { // first partition, only start GS kernel;
-            // GathS kernel start
-            for (int sp = 0; sp < SUB_PARTITION_NUM; sp++) {
-                if (superStep % 2 == 0) {
-                    acc->gsRun[sp].set_arg(1, acc->propBuffer[sp]);
-                } else {
-                    acc->gsRun[sp].set_arg(1, acc->propBufferNew[sp]);
-                }
-                acc->gsRun[sp].set_arg(0, acc->edgeBuffer[p][sp]);
-                acc->gsRun[sp].set_arg(2, acc->tempBuffer[p][sp]);
-                acc->gsRun[sp].set_arg(3, info->chunkProp[p][sp].edgeNumChunk * 2);
-                acc->gsRun[sp].start();
-            }
+    std::cout << "GS " << super_step << " Execute at processor " << world_rank << " partition " << partition << " begin ...";
 
-        } else if (p < info->partitionNum + 1) {
-            // GS kernel wait
-            for (int sp = 0; sp < SUB_PARTITION_NUM; sp++) {
-                acc->gsRun[sp].wait(); }
-            
-            if (p < info->partitionNum) {
-                // GS kernel start
-                for (int sp = 0; sp < SUB_PARTITION_NUM; sp++) {
-                    if (superStep % 2 == 0) {
-                        acc->gsRun[sp].set_arg(1, acc->propBuffer[sp]);
-                    } else {
-                        acc->gsRun[sp].set_arg(1, acc->propBufferNew[sp]);
-                    }
-                    acc->gsRun[sp].set_arg(0, acc->edgeBuffer[p][sp]);
-                    acc->gsRun[sp].set_arg(2, acc->tempBuffer[p][sp]);
-                    acc->gsRun[sp].set_arg(3, info->chunkProp[p][sp].edgeNumChunk * 2);
-                    acc->gsRun[sp].start();
-                }
-            }
+    if (partition < 0) return -1; // check the right parition id;
 
-            if (p > 1) {
-                // Apply kernel wait
-                for (int sp = 0; sp < SUB_PARTITION_NUM; sp++) {
-                    acc->readRun[sp].wait(); }
-                for (int sp = 0; sp < SUB_PARTITION_NUM - 1; sp++) {
-                    acc->mergeRun[sp].wait(); }
-                acc->applyRun.wait();
-                for (int sp = 0; sp < SUB_PARTITION_NUM - 1; sp++) {
-                    acc->forwardRun[sp].wait(); }
-                for (int sp = 0; sp < SUB_PARTITION_NUM; sp++) {
-                    acc->writeRun[sp].wait(); }
-            }
+    int p = partition;
+    for (int sp = 0; sp < (SUB_PARTITION_NUM / PROCESSOR_NUM); sp++) {
+        int isp = world_rank + sp * PROCESSOR_NUM;
+        acc->gsRun[sp].set_arg(0, acc->edgeBuffer[p][sp]);
+        acc->gsRun[sp].set_arg(1, acc->propBuffer[sp]);
+        acc->gsRun[sp].set_arg(2, acc->tempBuffer[p][sp]);
+        acc->gsRun[sp].set_arg(3, info->chunkProp[p][isp].edgeNumChunk * 2);
+        acc->gsRun[sp].start();
+    }
 
-            // Apply kernel start
-            for (int sp = 0; sp < SUB_PARTITION_NUM; sp++) {
-                acc->readRun[sp].set_arg(0, acc->tempBuffer[p-1][sp]);
-                acc->readRun[sp].set_arg(2, info->chunkProp[p-1][sp].destVertexNumChunk);
-                acc->readRun[sp].start();
-            }
+    for (int sp = 0; sp < (SUB_PARTITION_NUM / PROCESSOR_NUM); sp++) {
+        acc->gsRun[sp].wait();
+    }
 
-            for (int sp = 0; sp < SUB_PARTITION_NUM - 1; sp++) {
-                acc->mergeRun[sp].set_arg(3, 0); // dest = 0;
-                acc->mergeRun[sp].set_arg(4, info->chunkProp[p-1][sp].destVertexNumChunk);
-                acc->mergeRun[sp].start();
-            }
+    std::cout << " ... end" << std::endl;
+    return partition;
+}
 
-            if (superStep % 2 == 0) {
-                acc->applyRun.set_arg(0, acc->propBuffer[0]);
-            } else {
-                acc->applyRun.set_arg(0, acc->propBufferNew[0]);
-            }
-            acc->applyRun.set_arg(5, info->chunkProp[p-1][0].destVertexNumChunk); // depends on which SLR
-            acc->applyRun.start();
+int accApplyStart (int world_rank, int world_size, graphInfo *info, graphAccelerator * acc) {
 
-            for (int sp = 0; sp < SUB_PARTITION_NUM - 1; sp++) {
-                acc->forwardRun[sp].set_arg(3, 1); // dest = 1;
-                acc->forwardRun[sp].set_arg(4, info->chunkProp[p-1][sp].destVertexNumChunk);
-                acc->forwardRun[sp].start();
-            }
-
-            for (int sp = 0; sp < SUB_PARTITION_NUM; sp++) {
-                if (superStep % 2 == 0) {
-                    acc->writeRun[sp].set_arg(0, acc->subNewBuffer[p-1][sp]);
-                } else {
-                    acc->writeRun[sp].set_arg(0, acc->subBuffer[p-1][sp]);
-                }
-                acc->writeRun[sp].set_arg(2, info->chunkProp[p-1][sp].destVertexNumChunk);
-                acc->writeRun[sp].start();
-            }
-
-        } else { // wait last apply kernel end
-            // Apply kernel wait
-            for (int sp = 0; sp < SUB_PARTITION_NUM; sp++) {
-                acc->readRun[sp].wait(); }
-            for (int sp = 0; sp < SUB_PARTITION_NUM - 1; sp++) {
-                acc->mergeRun[sp].wait(); }
-            acc->applyRun.wait();
-            for (int sp = 0; sp < SUB_PARTITION_NUM - 1; sp++) {
-                acc->forwardRun[sp].wait(); }
-            for (int sp = 0; sp < SUB_PARTITION_NUM; sp++) {
-                acc->writeRun[sp].wait(); }
+    if (world_rank == 0) { // root node
+        std::cout << "root node apply stage start ... ";
+        // Apply kernel start
+        for (int sp = 0; sp < (SUB_PARTITION_NUM / PROCESSOR_NUM); sp++) {
+            acc->readRun[sp].set_arg(0, acc->propBuffer[sp]);
+            acc->readRun[sp].set_arg(2, info->alignedCompressedVertexNum);
+            acc->readRun[sp].start();
         }
+
+        for (int sp = 0; sp < (SUB_PARTITION_NUM / PROCESSOR_NUM); sp++) {
+            acc->mergeRun[sp].set_arg(3, 0); // dest = 0;
+            acc->mergeRun[sp].set_arg(4, info->alignedCompressedVertexNum);
+            acc->mergeRun[sp].start();
+        }
+
+        acc->applyRun.set_arg(0, acc->propBuffer[0]);
+        acc->applyRun.set_arg(5, info->alignedCompressedVertexNum); // depends on which SLR
+        acc->applyRun.start();
+
+        for (int sp = 0; sp < (SUB_PARTITION_NUM / PROCESSOR_NUM); sp++) {
+            acc->forwardRun[sp].set_arg(3, 1); // dest = 1;
+            acc->forwardRun[sp].set_arg(4, info->alignedCompressedVertexNum);
+            acc->forwardRun[sp].start();
+        }
+
+        for (int sp = 0; sp < (SUB_PARTITION_NUM / PROCESSOR_NUM); sp++) {
+            acc->writeRun[sp].set_arg(0, acc->propBufferNew[sp]);
+            acc->writeRun[sp].set_arg(2, info->alignedCompressedVertexNum);
+            acc->writeRun[sp].start();
+        }
+        std::cout << "... end" << std::endl;
+    } else if (world_rank < world_size - 1) { // middle node
+    
+    } else { // last node 
+        std::cout << "last node apply stage start ... ";
+        for (int sp = 0; sp < (SUB_PARTITION_NUM / PROCESSOR_NUM); sp++) {
+            acc->writeRun[sp].set_arg(0, acc->propBufferNew[sp]);
+            acc->writeRun[sp].set_arg(2, info->alignedCompressedVertexNum);
+            acc->writeRun[sp].start();
+        }
+
+        for (int sp = 0; sp < (SUB_PARTITION_NUM / PROCESSOR_NUM) - 1; sp++) {
+            acc->forwardRun[sp].set_arg(3, 0); // dest = 0;
+            acc->forwardRun[sp].set_arg(4, info->alignedCompressedVertexNum);
+            acc->forwardRun[sp].start();
+        }
+
+        for (int sp = 0; sp < (SUB_PARTITION_NUM / PROCESSOR_NUM); sp++) {
+            acc->readRun[sp].set_arg(0, acc->propBuffer[sp]);
+            acc->readRun[sp].set_arg(2, info->alignedCompressedVertexNum);
+            acc->readRun[sp].start();
+        }
+
+        for (int sp = 0; sp < (SUB_PARTITION_NUM / PROCESSOR_NUM) - 1; sp++) {
+            acc->mergeRun[sp].set_arg(3, 1); // dest = 1;
+            acc->mergeRun[sp].set_arg(4, info->alignedCompressedVertexNum);
+            acc->mergeRun[sp].start();
+        }
+        std::cout << "... end" << std::endl;
     }
     return 0;
 }
 
+int accApplyEnd (int world_rank, int world_size, graphInfo *info, graphAccelerator * acc) {
 
-void* acceleratorQueryRegister(void)
-{
-    // graphAccelerator * acc = getAccelerator();
-    // transfer_data_from_pl(acc->context, acc->device,MEM_ID_RESULT_REG);
-    // return get_host_mem_pointer(MEM_ID_RESULT_REG);
+    if (world_rank == 0) { // root node
+        std::cout << "root node apply wait ..." << std::endl;
+        for (int sp = 0; sp < (SUB_PARTITION_NUM / PROCESSOR_NUM); sp++) {
+            acc->readRun[sp].wait();
+            std::cout << "root read wait done" << std::endl;
+        }
+
+        for (int sp = 0; sp < (SUB_PARTITION_NUM / PROCESSOR_NUM); sp++) {
+            acc->mergeRun[sp].wait();
+            std::cout << "root merge wait done" << std::endl;
+        }
+
+        acc->applyRun.wait();
+        std::cout << "root apply wait done" << std::endl;
+
+        for (int sp = 0; sp < (SUB_PARTITION_NUM / PROCESSOR_NUM); sp++) {
+            acc->forwardRun[sp].wait();
+            std::cout << "root forward wait done" << std::endl;
+        }
+
+        for (int sp = 0; sp < (SUB_PARTITION_NUM / PROCESSOR_NUM); sp++) {
+            acc->writeRun[sp].wait();
+            std::cout << "root node end done" << std::endl;
+        }
+
+    } else if (world_rank < world_size - 1) { // middle node 
+
+    } else { //last node
+
+        std::cout << "last node apply wait ..." << std::endl;
+        for (int sp = 0; sp < (SUB_PARTITION_NUM / PROCESSOR_NUM); sp++) {
+            acc->readRun[sp].wait();
+            std::cout << "last read wait done" << std::endl;
+        }
+
+        for (int sp = 0; sp < (SUB_PARTITION_NUM / PROCESSOR_NUM) - 1; sp++) {
+            acc->mergeRun[sp].wait();
+            std::cout << "last merge wait done" << std::endl;
+        }
+
+        for (int sp = 0; sp < (SUB_PARTITION_NUM / PROCESSOR_NUM) - 1; sp++) {
+            acc->forwardRun[sp].wait();
+            std::cout << "last forward wait done" << std::endl;
+        }
+
+        for (int sp = 0; sp < (SUB_PARTITION_NUM / PROCESSOR_NUM); sp++) {
+            acc->writeRun[sp].wait();
+            std::cout << "last write wait done" << std::endl;
+        }
+    }
+
     return 0;
+
 }
 
-prop_t* acceleratorQueryProperty(int step)
-{
-    // graphAccelerator * acc = getAccelerator();
-    // transfer_data_from_pl(acc->context, acc->device, getGatherScatter(0)->prop[step].id);
-    // prop_t * propValue = (prop_t *)get_host_mem_pointer(getGatherScatter(0)->prop[step].id);
-
-    // return propValue;
-    return 0;
-}
 
 void partitionTransfer(int world_rank, graphInfo *info, graphAccelerator * acc)
 {
@@ -327,6 +351,7 @@ void partitionTransfer(int world_rank, graphInfo *info, graphAccelerator * acc)
 #if USE_APPLY
     if (world_rank == 0) { // root node
         acc->outDegBuffer.sync(XCL_BO_SYNC_BO_TO_DEVICE);
+        acc->outRegBuffer.sync(XCL_BO_SYNC_BO_TO_DEVICE);
     }
 
 #endif
