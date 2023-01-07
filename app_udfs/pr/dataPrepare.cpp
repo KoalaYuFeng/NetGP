@@ -1,7 +1,9 @@
-#include "host_graph_api.h"
+// #include "host_graph_api.h" // need to modify when comile single FPGA code
+#include "mpi_graph_api.h"
 #include "fpga_application.h"
+#include <cmath>
 
-#define INT2FLOAT                   (pow(2,30))
+#define INT2FLOAT                   (std::pow(2,30))
 
 int float2int(float a) {
     return (int)(a * INT2FLOAT);
@@ -25,8 +27,10 @@ int dataPrepareProperty(graphInfo *info)
         for (int i = 0; i < info->alignedCompressedVertexNum; i++) {
             if (i >= info->compressedVertexNum) {
                 info->chunkPropData[sp][i] = 0;
+                info->chunkApplyPropData[i] = 0;
             } else {
                 info->chunkOutDegData[i] = info->outDeg[i];
+                info->chunkApplyPropData[i] = init_score_int / info->outDeg[i];
                 info->chunkPropData[sp][i] = init_score_int / info->outDeg[i];
             }
         }

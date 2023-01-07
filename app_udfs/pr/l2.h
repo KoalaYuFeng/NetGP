@@ -4,7 +4,7 @@
 
 #define kDamp               (0.85f)
 #define kDampFixPoint       108//(0.85 << 7)  // * 128
-
+#define prop_t 				int
 /* source vertex property process */
 inline prop_t preprocessProperty(prop_t srcProp)
 {

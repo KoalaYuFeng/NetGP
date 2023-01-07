@@ -4,7 +4,11 @@
 #include <string>
 #include <vector>
 
-#include "host_graph_api.h"
+#include "mpi_graph_api.h"
+
+#define BURSTBUFFERSIZE         (1<<7)
+#define ALIGN_SIZE              (BURSTBUFFERSIZE * 16 * 2)
+#define ENDFLAG                 0xffffffff
 
 void partitionTransfer(int world_rank, graphInfo *info, graphAccelerator *acc);
 void setAccKernelArgs(int world_rank, int world_size, graphInfo *info, graphAccelerator * acc);
@@ -14,5 +18,6 @@ int acceleratorDataPreprocess(graphInfo *info);
 int accGatherScatterExecute (int super_step, int world_rank, int partition, graphInfo *info, graphAccelerator * acc);
 int accApplyStart (int world_rank, int world_size, graphInfo *info, graphAccelerator * acc);
 int accApplyEnd (int world_rank, int world_size, graphInfo *info, graphAccelerator * acc);
+int dataPrepareProperty(graphInfo *info);
 
 #endif /* __MPI_HOST_H__ */ 

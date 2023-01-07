@@ -9,7 +9,7 @@
 #include <chrono>
 #include <cstdlib>
 
-#include "host_graph_api.h"
+#include "mpi_graph_api.h"
 #include "mpi_host.h"
 #include "mpi_network.h"
 
@@ -76,11 +76,13 @@ int main(int argc, char** argv) {
     auto start_kernel = chrono::steady_clock::now();
 
     for (int s = 0; s < super_step; s++) {
-        for (int p_idx = 0; p_idx < graphDataInfo.partitionNum; p_idx++) { // for each partition
-            int result = accGatherScatterExecute(s, world_rank, p_idx, &graphDataInfo, &thunderGraph); // proc_id, partition_id, graph_info, acc_info;
-            // std::cout << "Sync partition [" << p_idx << "] ...";
 
-            MPI_Barrier(MPI_COMM_WORLD); // sync barrier;
+        MPI_Barrier(MPI_COMM_WORLD); // sync barrier;
+        auto start_kernel_superstep = chrono::steady_clock::now();
+
+        for (int p_idx = 0; p_idx < graphDataInfo.partitionNum; p_idx++) { // for each partition
+            accGatherScatterExecute (s, world_rank, p_idx, &graphDataInfo, &thunderGraph); // proc_id, partition_id, graph_info, acc_info;
+            // std::cout << "Sync partition [" << p_idx << "] ...";
 
             // int p_temp_rx[PROCESSOR_NUM];
             // for (int i = 0; i < PROCESSOR_NUM; i++) {
@@ -101,22 +103,42 @@ int main(int argc, char** argv) {
             //     }
             // }
         }
+        auto end_GS_kernel_superstep = chrono::steady_clock::now();
 
         MPI_Barrier(MPI_COMM_WORLD); // sync barrier;
+
+        std::cout << "[INFO] GS kernel done in superstep " << s << world_rank << std::endl;
+        std::cout << "[INFO] Apply kernel start in superstep " << s << world_rank << "... ";
 
         if (world_rank != (world_size - 1)) {
             accApplyStart (world_rank, world_size, &graphDataInfo, &thunderGraph);} // except last node
 
         MPI_Barrier(MPI_COMM_WORLD); // sync barrier;
 
+        std::cout << " ... "  << world_rank ;
+
         if (world_rank == (world_size - 1)) {
             accApplyStart (world_rank, world_size, &graphDataInfo, &thunderGraph);} // last node start
+        
+        std::cout << world_rank << " ... done " << std::endl;
+
+        std::cout << world_rank << "[INFO] Apply kernel wait in superstep " << s << "... ";
 
         accApplyEnd (world_rank, world_size, &graphDataInfo, &thunderGraph); // wait kernle done;
+
+        MPI_Barrier(MPI_COMM_WORLD); // sync barrier;
+
+        auto end_kernel_superstep = chrono::steady_clock::now();
+        std::cout << " ... done " << std::endl;
+        std::cout << "[INFO] Processor " << world_rank << " GS elapses " ;
+        std::cout << (chrono::duration_cast<chrono::microseconds>(end_GS_kernel_superstep - start_kernel_superstep).count()) << " us ";
+        std::cout << " Overall elapses " ;
+        std::cout << (chrono::duration_cast<chrono::microseconds>(end_kernel_superstep - start_kernel_superstep).count()) << " us" << std::endl;
     }
 
     auto end = chrono::steady_clock::now();
-    std::cout << "Graph kernel process elapses " << (chrono::duration_cast<chrono::microseconds>(end - start_kernel).count())/super_step<< "us" << std::endl;
+    std::cout << "[INFO] Processor " << world_rank << " average time costs " ;
+    std::cout << (chrono::duration_cast<chrono::microseconds>(end - start_kernel).count())/super_step<< " us" << std::endl;
 
     // need to add result transfer function
 

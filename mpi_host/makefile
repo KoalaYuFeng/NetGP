@@ -23,16 +23,16 @@ HOST_SRCS += ./mpi_network.cpp
 
 HOST_SRCS += ../common/includes/cmdparser/cmdlineparser.cpp
 HOST_SRCS += ../common/includes/logger/logger.cpp
-HOST_SRCS += ../libgraph/verification/host_graph_cmodel.cpp
-HOST_SRCS += ../libgraph/verification/host_graph_verification_apply.cpp
-HOST_SRCS += ../libgraph/verification/host_graph_verification_gs.cpp
+# HOST_SRCS += ../libgraph/verification/host_graph_cmodel.cpp
+# HOST_SRCS += ../libgraph/verification/host_graph_verification_apply.cpp
+# HOST_SRCS += ../libgraph/verification/host_graph_verification_gs.cpp
 HOST_SRCS += $(APPCONFIG)/dataPrepare.cpp
 
 CXXFLAGS += -I ./
-CXXFLAGS += -I ../libgraph
+## CXXFLAGS += -I ../libgraph
 CXXFLAGS += -I ../libgraph/misc
-CXXFLAGS += -I ../libgraph/verification
-CXXFLAGS += -I ../libgraph/scheduler
+## CXXFLAGS += -I ../libgraph/verification
+## CXXFLAGS += -I ../libgraph/scheduler
 CXXFLAGS += -I ../libfpga
 CXXFLAGS += -I $(APPCONFIG)
 CXXFLAGS += -I ../app_udfs
