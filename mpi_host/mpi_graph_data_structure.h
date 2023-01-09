@@ -14,6 +14,7 @@ typedef struct
 {
     xrt::kernel gsKernel[SUB_PARTITION_NUM];
     xrt::kernel applyKernel;
+    xrt::kernel syncKernel;
     xrt::kernel mergeKernel[SUB_PARTITION_NUM];
     xrt::kernel forwardKernel[SUB_PARTITION_NUM];
     xrt::kernel readKernel[SUB_PARTITION_NUM];
@@ -21,6 +22,7 @@ typedef struct
 
     xrt::run gsRun[SUB_PARTITION_NUM];
     xrt::run applyRun;
+    xrt::run syncRun;
     xrt::run mergeRun[SUB_PARTITION_NUM];
     xrt::run forwardRun[SUB_PARTITION_NUM]; // for root node, an extra forward kernel for apply
     xrt::run readRun[SUB_PARTITION_NUM];

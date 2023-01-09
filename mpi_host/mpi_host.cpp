@@ -43,7 +43,7 @@ int main(int argc, char** argv) {
     if (world_rank == 0) { // root node
         binary_file = "./acc_root.xclbin";
     } else if (world_rank == (world_size - 1)) { // last node;
-        binary_file = "./acc_last.xclbin";
+        binary_file = "./acc_last_hw_sync.xclbin";
     } else { // middle nodes
         binary_file = "./acc_node_" + std::to_string(world_rank) + ".xclbin";
     }
@@ -105,28 +105,33 @@ int main(int argc, char** argv) {
         }
         auto end_GS_kernel_superstep = chrono::steady_clock::now();
 
-        MPI_Barrier(MPI_COMM_WORLD); // sync barrier;
+        // MPI_Barrier(MPI_COMM_WORLD); // sync barrier;
 
         std::cout << "[INFO] GS kernel done in superstep " << s << world_rank << std::endl;
-        std::cout << "[INFO] Apply kernel start in superstep " << s << world_rank << "... ";
 
-        if (world_rank != (world_size - 1)) {
-            accApplyStart (world_rank, world_size, &graphDataInfo, &thunderGraph);} // except last node
+        // std::cout << "[INFO] Apply kernel start in superstep " << s << world_rank << "... ";
 
-        MPI_Barrier(MPI_COMM_WORLD); // sync barrier;
+        // if (world_rank != (world_size - 1)) {
+        //     accApplyStart (world_rank, world_size, &graphDataInfo, &thunderGraph);} // except last node
 
-        std::cout << " ... "  << world_rank ;
+        // MPI_Barrier(MPI_COMM_WORLD); // sync barrier;
 
-        if (world_rank == (world_size - 1)) {
-            accApplyStart (world_rank, world_size, &graphDataInfo, &thunderGraph);} // last node start
+        // std::cout << " ... "  << world_rank ;
+
+        // if (world_rank == (world_size - 1)) {
+        //     accApplyStart (world_rank, world_size, &graphDataInfo, &thunderGraph);} // last node start
         
-        std::cout << world_rank << " ... done " << std::endl;
+        // std::cout << world_rank << " ... done " << std::endl;
 
-        std::cout << world_rank << "[INFO] Apply kernel wait in superstep " << s << "... ";
+        // std::cout << world_rank << "[INFO] Apply kernel wait in superstep " << s << "... ";
 
-        accApplyEnd (world_rank, world_size, &graphDataInfo, &thunderGraph); // wait kernle done;
+        accApplyStart (world_rank, world_size, &graphDataInfo, &thunderGraph);
 
-        MPI_Barrier(MPI_COMM_WORLD); // sync barrier;
+        // MPI_Barrier(MPI_COMM_WORLD); // sync barrier;
+
+        accApplyEnd (world_rank, world_size, &graphDataInfo, &thunderGraph); // wait kernel done;
+
+        // MPI_Barrier(MPI_COMM_WORLD); // sync barrier;
 
         auto end_kernel_superstep = chrono::steady_clock::now();
         std::cout << " ... done " << std::endl;

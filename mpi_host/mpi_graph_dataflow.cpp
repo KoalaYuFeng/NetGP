@@ -126,6 +126,15 @@ int acceleratorInit(int world_rank, int world_size, std::string& file_name,  gra
         acc->mergeKernel[SUB_PARTITION_NUM / PROCESSOR_NUM - 1] = xrt::kernel(acc->graphDevice, acc->graphUuid, krnl_name.c_str());
         krnl_name = "streamForward:{streamForward_" + id + "}";
         acc->forwardKernel[SUB_PARTITION_NUM / PROCESSOR_NUM - 1] = xrt::kernel(acc->graphDevice, acc->graphUuid, krnl_name.c_str());
+    
+    } else { // last node
+        id = std::to_string(SUB_PARTITION_NUM / PROCESSOR_NUM);
+        krnl_name = "streamMerge:{streamMerge_" + id + "}";
+        acc->mergeKernel[SUB_PARTITION_NUM / PROCESSOR_NUM - 1] = xrt::kernel(acc->graphDevice, acc->graphUuid, krnl_name.c_str());
+        krnl_name = "streamForward:{streamForward_" + id + "}";
+        acc->forwardKernel[SUB_PARTITION_NUM / PROCESSOR_NUM - 1] = xrt::kernel(acc->graphDevice, acc->graphUuid, krnl_name.c_str());
+        std::string krnl_name_full = "syncVertex:{syncVertex_1}";
+        acc->syncKernel = xrt::kernel(acc->graphDevice, acc->graphUuid, krnl_name_full.c_str());
     }
 
 #endif
@@ -259,13 +268,14 @@ int accApplyStart (int world_rank, int world_size, graphInfo *info, graphAcceler
         std::cout << " middle node.. " << std::endl;
     
     } else { // last node 
+
         for (int sp = 0; sp < (SUB_PARTITION_NUM / PROCESSOR_NUM); sp++) {
             acc->writeRun[sp].set_arg(0, acc->propBufferNew[sp]);
             acc->writeRun[sp].set_arg(2, info->alignedCompressedVertexNum);
             acc->writeRun[sp].start();
         }
 
-        for (int sp = 0; sp < (SUB_PARTITION_NUM / PROCESSOR_NUM) - 1; sp++) {
+        for (int sp = 0; sp < (SUB_PARTITION_NUM / PROCESSOR_NUM); sp++) {
             acc->forwardRun[sp].set_arg(3, 0); // dest = 0;
             acc->forwardRun[sp].set_arg(4, info->alignedCompressedVertexNum);
             acc->forwardRun[sp].start();
@@ -277,11 +287,13 @@ int accApplyStart (int world_rank, int world_size, graphInfo *info, graphAcceler
             acc->readRun[sp].start();
         }
 
-        for (int sp = 0; sp < (SUB_PARTITION_NUM / PROCESSOR_NUM) - 1; sp++) {
+        for (int sp = 0; sp < (SUB_PARTITION_NUM / PROCESSOR_NUM); sp++) {
             acc->mergeRun[sp].set_arg(3, 1); // dest = 1;
             acc->mergeRun[sp].set_arg(4, info->alignedCompressedVertexNum);
             acc->mergeRun[sp].start();
         }
+
+        acc->syncRun.start();
     }
     return 0;
 }
@@ -292,6 +304,7 @@ int accApplyEnd (int world_rank, int world_size, graphInfo *info, graphAccelerat
         for (int sp = 0; sp < (SUB_PARTITION_NUM / PROCESSOR_NUM); sp++) {
             acc->readRun[sp].wait();
         }
+        std::cout << "root read done" << std::endl;
 
         for (int sp = 0; sp < (SUB_PARTITION_NUM / PROCESSOR_NUM); sp++) {
             acc->mergeRun[sp].wait();
@@ -314,18 +327,21 @@ int accApplyEnd (int world_rank, int world_size, graphInfo *info, graphAccelerat
         for (int sp = 0; sp < (SUB_PARTITION_NUM / PROCESSOR_NUM); sp++) {
             acc->readRun[sp].wait();
         }
+        std::cout << "last read done" << std::endl;
 
-        for (int sp = 0; sp < (SUB_PARTITION_NUM / PROCESSOR_NUM) - 1; sp++) {
+        for (int sp = 0; sp < (SUB_PARTITION_NUM / PROCESSOR_NUM); sp++) {
             acc->mergeRun[sp].wait();
         }
 
-        for (int sp = 0; sp < (SUB_PARTITION_NUM / PROCESSOR_NUM) - 1; sp++) {
+        for (int sp = 0; sp < (SUB_PARTITION_NUM / PROCESSOR_NUM); sp++) {
             acc->forwardRun[sp].wait();
         }
 
         for (int sp = 0; sp < (SUB_PARTITION_NUM / PROCESSOR_NUM); sp++) {
             acc->writeRun[sp].wait();
         }
+
+        acc->syncRun.wait();
     }
 
     return 0;
@@ -391,6 +407,14 @@ void setAccKernelArgs(int world_rank, int world_size, graphInfo *info, graphAcce
     } else if (world_rank < world_size - 1) { // middle node
         acc->mergeRun[(SUB_PARTITION_NUM / PROCESSOR_NUM) - 1] = xrt::run(acc->mergeKernel[(SUB_PARTITION_NUM / PROCESSOR_NUM) - 1]);
         acc->forwardRun[(SUB_PARTITION_NUM / PROCESSOR_NUM) - 1] = xrt::run(acc->forwardKernel[(SUB_PARTITION_NUM / PROCESSOR_NUM) - 1]);
+
+    } else { // last node
+        acc->mergeRun[(SUB_PARTITION_NUM / PROCESSOR_NUM) - 1] = xrt::run(acc->mergeKernel[(SUB_PARTITION_NUM / PROCESSOR_NUM) - 1]);
+        acc->forwardRun[(SUB_PARTITION_NUM / PROCESSOR_NUM) - 1] = xrt::run(acc->forwardKernel[(SUB_PARTITION_NUM / PROCESSOR_NUM) - 1]);
+        acc->syncRun = xrt::run(acc->syncKernel);
+        acc->syncRun.set_arg(2, 2048); // FIFO length
+        acc->syncRun.set_arg(3, info->alignedCompressedVertexNum/16); // vertex number
+
     }
 
 #endif
