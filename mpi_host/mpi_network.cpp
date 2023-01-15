@@ -131,7 +131,7 @@ int AlveoVnxNetworkLayer::runARPDiscovery() {
 bool AlveoVnxNetworkLayer::IsARPTableFound(const std::string &dest_ip) {
     uint32_t valid_entry = 0, valid = 0;
     uint32_t mac_lsb, mac_msb, arp_ip;
-    uint64_t mac_addr;
+    uint64_t mac_addr; // mac addr is used for debug
 
     uint32_t a, b, c, d;
     char dot;

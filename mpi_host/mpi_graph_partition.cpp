@@ -175,8 +175,8 @@ int acceleratorDataLoad(const std::string &gName, const std::string &mode, graph
             std::fill_n(info->chunkEdgeData[p][sp], edge_num_tmp * 2, 0);
         }
 
-        std::cout << "Partition "<< p <<" start index "<< vertex_index_start << " end index "<< vertex_index_end << std::endl;
-        std::cout << "Edge number: partion "<< edge_num_tmp * num_subpartition << " subpartion "<< edge_num_tmp << std::endl;
+        // std::cout << "Partition "<< p <<" start index "<< vertex_index_start << " end index "<< vertex_index_end << std::endl;
+        // std::cout << "Edge number: partion "<< edge_num_tmp * num_subpartition << " subpartion "<< edge_num_tmp << std::endl;
     }
 
     delete [] mapping_vertex_array;

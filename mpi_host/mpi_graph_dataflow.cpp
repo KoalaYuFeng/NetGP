@@ -17,7 +17,7 @@
 #define USE_APPLY true
 #define ROOT_NODE true // assume only root node have apply kernel
 
-// network configuration : 0 for root node.
+// network configuration : 0 for root node, 1 and 2 for middle nodes, 3 for last node.
 std::map<int, std::map<std::string, std::string>> FPGA_config = \
    {{0 , {{"ip_addr" , "192.168.0.201"}, {"tx_port" , "60512"}, {"rx_port" , "5001"}, {"idx" , "201"}, {"MAC_addr" , "00:0a:35:02:9d:c9"}}}, \
     {1 , {{"ip_addr" , "192.168.0.202"}, {"tx_port" , "62177"}, {"rx_port" , "5001"}, {"idx" , "202"}, {"MAC_addr" , "00:0a:35:02:9d:ca"}}}, \
@@ -34,49 +34,89 @@ int acceleratorInit(int world_rank, int world_size, std::string& file_name,  gra
 
     std::cout << "[INFO] Processor " << world_rank << " : Xclbin load done" <<std::endl;
 
-    //check net connection
-    AlveoVnxCmac cmac = AlveoVnxCmac(acc->graphDevice, acc->graphUuid, 1); // 1 for cmac_1
-    AlveoVnxNetworkLayer netlayer = AlveoVnxNetworkLayer(acc->graphDevice, acc->graphUuid, 1); // 1 for netlayer 1
+    //check linkstatus for different nodes
+    bool linkStatus = false;
+    if ((world_rank == 0) || (world_rank == world_size - 1)) { // for root node and last node, only need to check netlayer_1 1;
+        AlveoVnxCmac cmac_1 = AlveoVnxCmac(acc->graphDevice, acc->graphUuid, 1);
+        linkStatus = cmac_1.readRegister("stat_rx_status") & 0x1;
+        while(!linkStatus) {
+            // std::cout << " world rank " << world_rank <<  " LinkStatus is " << linkStatus <<std::endl;
+            sleep(1);
+            linkStatus = cmac_1.readRegister("stat_rx_status") & 0x1;
+        }
+        // std::cout<< "[INFO] Processor " << world_rank << " : Network connect"<<std::endl;
 
-    bool linkStatus = cmac.readRegister("stat_rx_status") & 0x1;
-    while(!linkStatus) {
-        // std::cout<<"LinkStatus is " << linkStatus <<std::endl;
-        sleep(1);
-        linkStatus = cmac.readRegister("stat_rx_status") & 0x1;
+    } else { // for middle node, need to check netlayer_1 0 and 1;
+        AlveoVnxCmac cmac_0 = AlveoVnxCmac(acc->graphDevice, acc->graphUuid, 0);
+        AlveoVnxCmac cmac_1 = AlveoVnxCmac(acc->graphDevice, acc->graphUuid, 1);
+        linkStatus = (cmac_0.readRegister("stat_rx_status") & 0x1) && (cmac_1.readRegister("stat_rx_status") & 0x1);
+        while(!linkStatus) {
+            // std::cout << " world rank " << world_rank <<  " LinkStatus is " << linkStatus <<std::endl;
+            sleep(1);
+            linkStatus = (cmac_0.readRegister("stat_rx_status") & 0x1) && (cmac_1.readRegister("stat_rx_status") & 0x1);
+        }
+        // std::cout<< "[INFO] Processor " << world_rank << " : Network connect"<<std::endl;
     }
-    std::cout<< "[INFO] Processor " << world_rank << " : Network connect"<<std::endl;
 
+    // set socket table, run arp discovery;
     if (world_rank == 0) { // root node, send msg to next node
-        netlayer.setAddress(FPGA_config[world_rank]["ip_addr"], FPGA_config[world_rank]["MAC_addr"]);
-        netlayer.setSocket(FPGA_config[world_rank + 1]["ip_addr"], stoi(FPGA_config[world_rank + 1]["tx_port"]), 5001, 0); // set recv socket
-        netlayer.setSocket(FPGA_config[world_rank + 1]["ip_addr"], 5001, stoi(FPGA_config[world_rank]["tx_port"]), 1); // set send socket
-        netlayer.getSocketTable();
+        AlveoVnxNetworkLayer netlayer_1 = AlveoVnxNetworkLayer(acc->graphDevice, acc->graphUuid, 1);
+        netlayer_1.setAddress(FPGA_config[world_rank]["ip_addr"], FPGA_config[world_rank]["MAC_addr"]);
+        netlayer_1.setSocket(FPGA_config[world_rank + 1]["ip_addr"], stoi(FPGA_config[world_rank + 1]["tx_port"]), 5001, 0); // set recv socket
+        netlayer_1.setSocket(FPGA_config[world_rank + 1]["ip_addr"], 5001, stoi(FPGA_config[world_rank]["tx_port"]), 1); // set send socket
+        netlayer_1.getSocketTable();
 
         bool ARP_ready = false;
-        std::cout << "[INFO] Processor " << world_rank << " ... wait ARP ready!" << std::endl;
+        // std::cout << "[INFO] Processor " << world_rank << " ... wait ARP to be ready ..." << std::endl;
         while(!ARP_ready) {
-            netlayer.runARPDiscovery();
+            netlayer_1.runARPDiscovery();
             usleep(500000);
-            ARP_ready = netlayer.IsARPTableFound(FPGA_config[world_rank + 1]["ip_addr"]);
+            ARP_ready = netlayer_1.IsARPTableFound(FPGA_config[world_rank + 1]["ip_addr"]);
         }
-        std::cout << "[INFO] Processor " << world_rank << " : ARP ready" << std::endl;
+        // std::cout << "[INFO] Processor " << world_rank << " : ARP ready" << std::endl;
 
-    } else if (world_rank < world_size - 1) { // middle node, get meg from upper node and send msg to down node
-        // at current stage, only 2 nodes, no middle nodes.
+    } else if (world_rank < world_size - 1) { // middle node, get msg from upstream node and send msg to downstream node
+        // netlayer 1 is used for communicating with upstream nodes, netlayer 0 is used for downstream node.
+        AlveoVnxNetworkLayer netlayer_0 = AlveoVnxNetworkLayer(acc->graphDevice, acc->graphUuid, 0);
+        AlveoVnxNetworkLayer netlayer_1 = AlveoVnxNetworkLayer(acc->graphDevice, acc->graphUuid, 1);
+
+        netlayer_0.setAddress(FPGA_config[world_rank]["ip_addr"], FPGA_config[world_rank]["MAC_addr"]);
+        netlayer_0.setSocket(FPGA_config[world_rank + 1]["ip_addr"], stoi(FPGA_config[world_rank + 1]["tx_port"]), 5001, 0); // set recv socket
+        netlayer_0.setSocket(FPGA_config[world_rank + 1]["ip_addr"], 5001, stoi(FPGA_config[world_rank]["tx_port"]), 1); // set send socket
+        netlayer_0.getSocketTable();
+
+        netlayer_1.setAddress(FPGA_config[world_rank]["ip_addr"], FPGA_config[world_rank]["MAC_addr"]);
+        netlayer_1.setSocket(FPGA_config[world_rank - 1]["ip_addr"], stoi(FPGA_config[world_rank - 1]["tx_port"]), 5001, 0); // set recv socket
+        netlayer_1.setSocket(FPGA_config[world_rank - 1]["ip_addr"], 5001, stoi(FPGA_config[world_rank]["tx_port"]), 1); // set send socket
+        netlayer_1.getSocketTable();
+
+        bool ARP_ready = false;
+        // std::cout << "[INFO] Processor " << world_rank << " ... wait ARP to be ready ..." << std::endl;
+        while(!ARP_ready) {
+            netlayer_0.runARPDiscovery();
+            netlayer_1.runARPDiscovery();
+            usleep(500000);
+            ARP_ready = (netlayer_0.IsARPTableFound(FPGA_config[world_rank + 1]["ip_addr"])) \
+                        && (netlayer_1.IsARPTableFound(FPGA_config[world_rank - 1]["ip_addr"]));
+        }
+        // std::cout << "[INFO] Processor " << world_rank << " : ARP ready" << std::endl;
+
     } else { // last node:
-        netlayer.setAddress(FPGA_config[world_rank]["ip_addr"], FPGA_config[world_rank]["MAC_addr"]);
-        netlayer.setSocket(FPGA_config[world_rank - 1]["ip_addr"], stoi(FPGA_config[world_rank - 1]["tx_port"]), 5001, 0); // set recv socket
-        netlayer.setSocket(FPGA_config[world_rank - 1]["ip_addr"], 5001, stoi(FPGA_config[world_rank]["tx_port"]), 1); // set send socket
-        netlayer.getSocketTable();
+        AlveoVnxNetworkLayer netlayer_1 = AlveoVnxNetworkLayer(acc->graphDevice, acc->graphUuid, 1);
+
+        netlayer_1.setAddress(FPGA_config[world_rank]["ip_addr"], FPGA_config[world_rank]["MAC_addr"]);
+        netlayer_1.setSocket(FPGA_config[world_rank - 1]["ip_addr"], stoi(FPGA_config[world_rank - 1]["tx_port"]), 5001, 0); // set recv socket
+        netlayer_1.setSocket(FPGA_config[world_rank - 1]["ip_addr"], 5001, stoi(FPGA_config[world_rank]["tx_port"]), 1); // set send socket
+        netlayer_1.getSocketTable();
 
         bool ARP_ready = false;
-        std::cout << "[INFO] Processor " << world_rank << " ... wait ARP ready!" << std::endl;
+        // std::cout << "[INFO] Processor " << world_rank << " ... wait ARP to be ready ..." << std::endl;
         while(!ARP_ready) {
-            netlayer.runARPDiscovery();
+            netlayer_1.runARPDiscovery();
             usleep(500000);
-            ARP_ready = netlayer.IsARPTableFound(FPGA_config[world_rank - 1]["ip_addr"]);
+            ARP_ready = netlayer_1.IsARPTableFound(FPGA_config[world_rank - 1]["ip_addr"]);
         }
-        std::cout << "[INFO] Processor " << world_rank << " : ARP ready" << std::endl;
+        // std::cout << "[INFO] Processor " << world_rank << " : ARP ready" << std::endl;
 
     }
 
@@ -91,7 +131,7 @@ int acceleratorInit(int world_rank, int world_size, std::string& file_name,  gra
 
 #if USE_APPLY
 
-    for (int i = 0; i < (SUB_PARTITION_NUM / PROCESSOR_NUM) - 1; i++)
+    for (int i = 0; i < (SUB_PARTITION_NUM / PROCESSOR_NUM); i++)
     {
         id = std::to_string(i + 1);
         krnl_name = "streamMerge:{streamMerge_" + id + "}";
@@ -104,35 +144,14 @@ int acceleratorInit(int world_rank, int world_size, std::string& file_name,  gra
         acc->writeKernel[i] = xrt::kernel(acc->graphDevice, acc->graphUuid, krnl_name.c_str());
     }
 
-    krnl_name = "readVertex:{readVertex_" + std::to_string(SUB_PARTITION_NUM / PROCESSOR_NUM) + "}";
-    acc->readKernel[SUB_PARTITION_NUM / PROCESSOR_NUM - 1] = xrt::kernel(acc->graphDevice, acc->graphUuid, krnl_name.c_str());
-    krnl_name = "writeVertex:{writeVertex_" + std::to_string(SUB_PARTITION_NUM / PROCESSOR_NUM) + "}";
-    acc->writeKernel[SUB_PARTITION_NUM / PROCESSOR_NUM - 1] = xrt::kernel(acc->graphDevice, acc->graphUuid, krnl_name.c_str());
-
     if (world_rank == 0)  // root node
     {
-        id = std::to_string(SUB_PARTITION_NUM / PROCESSOR_NUM);
-        krnl_name = "streamMerge:{streamMerge_" + id + "}";
-        acc->mergeKernel[SUB_PARTITION_NUM / PROCESSOR_NUM - 1] = xrt::kernel(acc->graphDevice, acc->graphUuid, krnl_name.c_str());
-        krnl_name = "streamForward:{streamForward_" + id + "}";
-        acc->forwardKernel[SUB_PARTITION_NUM / PROCESSOR_NUM - 1] = xrt::kernel(acc->graphDevice, acc->graphUuid, krnl_name.c_str());
         std::string krnl_name_full = "vertexApply:{vertexApply_1}";
         acc->applyKernel = xrt::kernel(acc->graphDevice, acc->graphUuid, krnl_name_full.c_str());
 
-    } else if (world_rank < world_size - 1) { // middle node
-
-        id = std::to_string(SUB_PARTITION_NUM / PROCESSOR_NUM);
-        krnl_name = "streamMerge:{streamMerge_" + id + "}";
-        acc->mergeKernel[SUB_PARTITION_NUM / PROCESSOR_NUM - 1] = xrt::kernel(acc->graphDevice, acc->graphUuid, krnl_name.c_str());
-        krnl_name = "streamForward:{streamForward_" + id + "}";
-        acc->forwardKernel[SUB_PARTITION_NUM / PROCESSOR_NUM - 1] = xrt::kernel(acc->graphDevice, acc->graphUuid, krnl_name.c_str());
+    } else if (world_rank < world_size - 1) { // middle node, no extra kernel
     
     } else { // last node
-        id = std::to_string(SUB_PARTITION_NUM / PROCESSOR_NUM);
-        krnl_name = "streamMerge:{streamMerge_" + id + "}";
-        acc->mergeKernel[SUB_PARTITION_NUM / PROCESSOR_NUM - 1] = xrt::kernel(acc->graphDevice, acc->graphUuid, krnl_name.c_str());
-        krnl_name = "streamForward:{streamForward_" + id + "}";
-        acc->forwardKernel[SUB_PARTITION_NUM / PROCESSOR_NUM - 1] = xrt::kernel(acc->graphDevice, acc->graphUuid, krnl_name.c_str());
         std::string krnl_name_full = "syncVertex:{syncVertex_1}";
         acc->syncKernel = xrt::kernel(acc->graphDevice, acc->graphUuid, krnl_name_full.c_str());
     }
@@ -265,7 +284,30 @@ int accApplyStart (int world_rank, int world_size, graphInfo *info, graphAcceler
         }
 
     } else if (world_rank < world_size - 1) { // middle node
-        std::cout << " middle node.. " << std::endl;
+
+        for (int sp = 0; sp < (SUB_PARTITION_NUM / PROCESSOR_NUM); sp++) {
+            acc->writeRun[sp].set_arg(0, acc->propBufferNew[sp]);
+            acc->writeRun[sp].set_arg(2, info->alignedCompressedVertexNum);
+            acc->writeRun[sp].start();
+        }
+
+        for (int sp = 0; sp < (SUB_PARTITION_NUM / PROCESSOR_NUM); sp++) {
+            acc->forwardRun[sp].set_arg(3, 1); // dest = 0;
+            acc->forwardRun[sp].set_arg(4, info->alignedCompressedVertexNum);
+            acc->forwardRun[sp].start();
+        }
+
+        for (int sp = 0; sp < (SUB_PARTITION_NUM / PROCESSOR_NUM); sp++) {
+            acc->readRun[sp].set_arg(0, acc->propBuffer[sp]);
+            acc->readRun[sp].set_arg(2, info->alignedCompressedVertexNum);
+            acc->readRun[sp].start();
+        }
+
+        for (int sp = 0; sp < (SUB_PARTITION_NUM / PROCESSOR_NUM); sp++) {
+            acc->mergeRun[sp].set_arg(3, 1); // dest = 1;
+            acc->mergeRun[sp].set_arg(4, info->alignedCompressedVertexNum);
+            acc->mergeRun[sp].start();
+        }
     
     } else { // last node 
 
@@ -304,7 +346,6 @@ int accApplyEnd (int world_rank, int world_size, graphInfo *info, graphAccelerat
         for (int sp = 0; sp < (SUB_PARTITION_NUM / PROCESSOR_NUM); sp++) {
             acc->readRun[sp].wait();
         }
-        std::cout << "root read done" << std::endl;
 
         for (int sp = 0; sp < (SUB_PARTITION_NUM / PROCESSOR_NUM); sp++) {
             acc->mergeRun[sp].wait();
@@ -320,14 +361,29 @@ int accApplyEnd (int world_rank, int world_size, graphInfo *info, graphAccelerat
             acc->writeRun[sp].wait();
         }
 
-    } else if (world_rank < world_size - 1) { // middle node 
+    } else if (world_rank < world_size - 1) { // middle node
+
+        for (int sp = 0; sp < (SUB_PARTITION_NUM / PROCESSOR_NUM); sp++) {
+            acc->readRun[sp].wait();
+        }
+
+        for (int sp = 0; sp < (SUB_PARTITION_NUM / PROCESSOR_NUM); sp++) {
+            acc->mergeRun[sp].wait();
+        }
+
+        for (int sp = 0; sp < (SUB_PARTITION_NUM / PROCESSOR_NUM); sp++) {
+            acc->forwardRun[sp].wait();
+        }
+
+        for (int sp = 0; sp < (SUB_PARTITION_NUM / PROCESSOR_NUM); sp++) {
+            acc->writeRun[sp].wait();
+        }
 
     } else { //last node
 
         for (int sp = 0; sp < (SUB_PARTITION_NUM / PROCESSOR_NUM); sp++) {
             acc->readRun[sp].wait();
         }
-        std::cout << "last read done" << std::endl;
 
         for (int sp = 0; sp < (SUB_PARTITION_NUM / PROCESSOR_NUM); sp++) {
             acc->mergeRun[sp].wait();
@@ -384,18 +440,14 @@ void setAccKernelArgs(int world_rank, int world_size, graphInfo *info, graphAcce
 
 #if USE_APPLY
 
-    for (int sp = 0; sp < (SUB_PARTITION_NUM / PROCESSOR_NUM) - 1; sp++) {
+    for (int sp = 0; sp < (SUB_PARTITION_NUM / PROCESSOR_NUM); sp++) {
         acc->readRun[sp] = xrt::run(acc->readKernel[sp]);
         acc->mergeRun[sp] = xrt::run(acc->mergeKernel[sp]);
         acc->forwardRun[sp] = xrt::run(acc->forwardKernel[sp]);
         acc->writeRun[sp] = xrt::run(acc->writeKernel[sp]);
     }
-    acc->readRun[(SUB_PARTITION_NUM / PROCESSOR_NUM) - 1] = xrt::run(acc->readKernel[(SUB_PARTITION_NUM / PROCESSOR_NUM) - 1]);
-    acc->writeRun[(SUB_PARTITION_NUM / PROCESSOR_NUM) - 1] = xrt::run(acc->writeKernel[(SUB_PARTITION_NUM / PROCESSOR_NUM) - 1]);
 
     if (world_rank == 0) { // root node
-        acc->mergeRun[(SUB_PARTITION_NUM / PROCESSOR_NUM) - 1] = xrt::run(acc->mergeKernel[(SUB_PARTITION_NUM / PROCESSOR_NUM) - 1]);
-        acc->forwardRun[(SUB_PARTITION_NUM / PROCESSOR_NUM) - 1] = xrt::run(acc->forwardKernel[(SUB_PARTITION_NUM / PROCESSOR_NUM) - 1]);
         acc->applyRun = xrt::run(acc->applyKernel);
         // acc->applyRun.set_arg(0, acc->propBuffer[0]);
         acc->applyRun.set_arg(3, acc->outDegBuffer);
@@ -404,13 +456,9 @@ void setAccKernelArgs(int world_rank, int world_size, graphInfo *info, graphAcce
         acc->applyRun.set_arg(6, 0);
         acc->applyRun.set_arg(7, 0);
 
-    } else if (world_rank < world_size - 1) { // middle node
-        acc->mergeRun[(SUB_PARTITION_NUM / PROCESSOR_NUM) - 1] = xrt::run(acc->mergeKernel[(SUB_PARTITION_NUM / PROCESSOR_NUM) - 1]);
-        acc->forwardRun[(SUB_PARTITION_NUM / PROCESSOR_NUM) - 1] = xrt::run(acc->forwardKernel[(SUB_PARTITION_NUM / PROCESSOR_NUM) - 1]);
+    } else if (world_rank < world_size - 1) { // middle node, no extra kernel set args operation
 
     } else { // last node
-        acc->mergeRun[(SUB_PARTITION_NUM / PROCESSOR_NUM) - 1] = xrt::run(acc->mergeKernel[(SUB_PARTITION_NUM / PROCESSOR_NUM) - 1]);
-        acc->forwardRun[(SUB_PARTITION_NUM / PROCESSOR_NUM) - 1] = xrt::run(acc->forwardKernel[(SUB_PARTITION_NUM / PROCESSOR_NUM) - 1]);
         acc->syncRun = xrt::run(acc->syncKernel);
         acc->syncRun.set_arg(2, 2048); // FIFO length
         acc->syncRun.set_arg(3, info->alignedCompressedVertexNum/16); // vertex number
@@ -419,7 +467,7 @@ void setAccKernelArgs(int world_rank, int world_size, graphInfo *info, graphAcce
 
 #endif
 
-    std::cout << "[INFO] Set Initial Kernel args done" << std::endl;
+    // std::cout << "[INFO] Set Initial Kernel args done" << std::endl;
 
 }
 

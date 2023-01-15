@@ -45,20 +45,22 @@ int main(int argc, char** argv) {
     } else if (world_rank == (world_size - 1)) { // last node;
         binary_file = "./acc_last_hw_sync.xclbin";
     } else { // middle nodes
-        binary_file = "./acc_node_" + std::to_string(world_rank) + ".xclbin";
+        binary_file = "./acc_middle.xclbin";
     }
     std::string g_name = parser.value("dataset");
     std::string path_graph_dataset = "/data/binary_graph_dataset/";
-    std::cout << "[INFO] Start main" << std::endl;
 
     // load graph
     acceleratorDataLoad(g_name, path_graph_dataset, &graphDataInfo); // each processor holds full graph.
+    std::cout << "[INFO] Processor " << world_rank << " graph load done " << std::endl;
 
     // init accelerator : init network stack, init kernel , init buffer , map host and device memory
     acceleratorInit(world_rank, world_size, binary_file, &graphDataInfo, &thunderGraph);
+    std::cout << "[INFO] Processor " << world_rank << " acc init done " << std::endl;
 
     // graph data pre-process
     acceleratorDataPreprocess(&graphDataInfo); // data prepare + data partition
+    std::cout << "[INFO] Processor " << world_rank << " graph preprocess done " << std::endl;
     // acceleratorCModelDataPreprocess(&graphDataInfo); // cmodel data preprocess, for verification
 
     // transfer host data to FPGA side
@@ -134,7 +136,6 @@ int main(int argc, char** argv) {
         // MPI_Barrier(MPI_COMM_WORLD); // sync barrier;
 
         auto end_kernel_superstep = chrono::steady_clock::now();
-        std::cout << " ... done " << std::endl;
         std::cout << "[INFO] Processor " << world_rank << " GS elapses " ;
         std::cout << (chrono::duration_cast<chrono::microseconds>(end_GS_kernel_superstep - start_kernel_superstep).count()) << " us ";
         std::cout << " Overall elapses " ;
