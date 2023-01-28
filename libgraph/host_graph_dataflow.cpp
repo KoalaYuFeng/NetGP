@@ -72,7 +72,7 @@ int acceleratorInit(std::string& file_name,  graphInfo *info, graphAccelerator* 
             acc->edgeBuffer[i][j] = xrt::bo(acc->graphDevice, edge_size_bytes, acc->gsKernel[j].group_id(0));
             info->chunkEdgeData[i][j] = acc->edgeBuffer[i][j].map<int*>();
 
-            prop_size_bytes = info->alignedCompressedVertexNum * sizeof(prop_t); // vertex prop;
+            prop_size_bytes = info->partitionNum * PARTITION_SIZE * sizeof(prop_t); // vertex prop;
             acc->propBuffer[j] = xrt::bo(acc->graphDevice, prop_size_bytes, acc->gsKernel[j].group_id(1));
             info->chunkPropData[j] = acc->propBuffer[j].map<int*>();
 
@@ -84,7 +84,7 @@ int acceleratorInit(std::string& file_name,  graphInfo *info, graphAccelerator* 
 #if USE_APPLY
 
         for (int j = 0; j < SUB_PARTITION_NUM; j++) {
-            prop_size_bytes = info->alignedCompressedVertexNum * sizeof(prop_t); // new vertex prop;
+            prop_size_bytes = info->partitionNum * PARTITION_SIZE * sizeof(prop_t); // new vertex prop;
             acc->propBufferNew[j] = xrt::bo(acc->graphDevice, prop_size_bytes, acc->writeKernel[j].group_id(0));
             info->chunkPropDataNew[j] = acc->propBufferNew[j].map<int*>();
         }
@@ -105,9 +105,11 @@ int acceleratorInit(std::string& file_name,  graphInfo *info, graphAccelerator* 
         outDeg_size_bytes = info->alignedCompressedVertexNum * sizeof(prop_t); // vertex number * sizeof(int)
         acc->outDegBuffer = xrt::bo(acc->graphDevice, outDeg_size_bytes, acc->applyKernel.group_id(0));
         acc->outRegBuffer = xrt::bo(acc->graphDevice, outDeg_size_bytes, acc->applyKernel.group_id(0));
+        acc->propApplyBuffer = xrt::bo(acc->graphDevice, outDeg_size_bytes, acc->applyKernel.group_id(0));
 
         info->chunkOutDegData = acc->outDegBuffer.map<int*>();
         info->chunkOutRegData = acc->outRegBuffer.map<int*>();
+        info->chunkApplyPropData = acc->propApplyBuffer.map<int*>();
 
 #endif
 
@@ -181,11 +183,7 @@ int acceleratorSuperStep(int superStep, graphInfo *info, graphAccelerator * acc)
                 acc->mergeRun[sp].start();
             }
 
-            if (superStep % 2 == 0) {
-                acc->applyRun.set_arg(0, acc->propBuffer[0]);
-            } else {
-                acc->applyRun.set_arg(0, acc->propBufferNew[0]);
-            }
+            acc->applyRun.set_arg(0, acc->propApplyBuffer);
             acc->applyRun.set_arg(5, info->chunkProp[p-1][0].destVertexNumChunk); // depends on which SLR
             acc->applyRun.start();
 
@@ -248,6 +246,7 @@ void partitionTransfer(graphInfo *info, graphAccelerator * acc)
         for (int j = 0; j < SUB_PARTITION_NUM; j++) {
             acc->propBuffer[j].sync(XCL_BO_SYNC_BO_TO_DEVICE);
             acc->edgeBuffer[i][j].sync(XCL_BO_SYNC_BO_TO_DEVICE);
+            acc->propApplyBuffer.sync(XCL_BO_SYNC_BO_TO_DEVICE);
         }
     }
 

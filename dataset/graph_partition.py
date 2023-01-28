@@ -23,9 +23,9 @@ for dataset_index in range(len(dataset)):
     ## filename = '/data/graph_dataset/rmat-19-32.txt' ## take R19 for example
     ## filename = '/data/graph_dataset/rmat-12-4.txt'
     partition_size = 1024*1024 ## can be 1024*1024 or 512*1024
-    sub_partition_num = 12
-    UNMAPPED_FLAG = 4294967295 ## 0xffffffff, max vertex index
-    END_FLAG = 4294967294 ## 0xffffffff - 1, end_flag value
+    sub_partition_num = 3
+    UNMAPPED_FLAG = 2147483647 ## 0x7fffffff, max vertex index
+    END_FLAG = 2147483646 ## 0x7fffffff - 1, end_flag value
     alignment_size = 4*1024 ## edge num of each sub-partition should be 4K align
 
     print ("Load data from hard-disk ... ... ", filename)
@@ -53,7 +53,7 @@ for dataset_index in range(len(dataset)):
     tmp_index = 0
     for i in range(len(mapping_index)):
         if (outdegree[i] == 0):
-            mapping_index[i] = UNMAPPED_FLAG ## 0xFFFFFFFF means invalid vertex
+            mapping_index[i] = UNMAPPED_FLAG ## 0xFFFFFFFF-1 means invalid vertex
         else:
             mapping_index[i] = tmp_index
             tmp_index += 1
@@ -103,11 +103,11 @@ for dataset_index in range(len(dataset)):
         edge_num_p = np.int32((edge_num_p + alignment_size - 1)/alignment_size) * alignment_size
 
         for j in range(sub_partition_num):
-            array_sp = np.zeros((edge_num_p, 2),dtype = np.uint32)
+            array_sp = np.zeros((edge_num_p, 2),dtype = np.int32)
             for k in range(edge_num_p):
                 if ((j*edge_num_p + k) >= len(array_temp)):
-                    array_sp[k][0] = END_FLAG
-                    array_sp[k][1] = array_temp[len(array_temp)-1][1]
+                    array_sp[k][0] = array_temp[len(array_temp)-1][0]
+                    array_sp[k][1] = END_FLAG
                 else:    
                     array_sp[k, :] = array_temp[j*edge_num_p + k, :]
             

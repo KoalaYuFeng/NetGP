@@ -36,6 +36,7 @@ typedef struct
     
     xrt::bo outDegBuffer; // each partition owns one buffer
     xrt::bo outRegBuffer; // each partition owns one buffer
+    xrt::bo propApplyBuffer; // used for apply stage
 
     xrt::device graphDevice;
     xrt::uuid graphUuid;

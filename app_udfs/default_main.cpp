@@ -23,13 +23,14 @@ int main(int argc, char **argv) {
     sda::utils::CmdLineParser parser;
 
     parser.addSwitch("--xclbin_file", "-x", "input binary file string", "");
-    parser.addSwitch("--dataset", "-d", "dataset name", "HW"); // using HW dataset as default
+    parser.addSwitch("--dataset", "-d", "dataset name", "R19"); // using HW dataset as default
     parser.parse(argc, argv);
 
     // Read settings
     std::string binary_file = parser.value("xclbin_file");
     std::string g_name = parser.value("dataset");
-    std::string path_graph_dataset = "/data/binary_graph_dataset/";
+    // std::string path_graph_dataset = "/data/binary_graph_dataset/";
+    std::string path_graph_dataset = "./";
     std::cout << "[INFO] Start main" << std::endl;
 
     auto start_main = chrono::steady_clock::now();
@@ -41,7 +42,7 @@ int main(int argc, char **argv) {
     acceleratorInit(binary_file, &graphDataInfo, &thunderGraph); // init kernel , init buffer , map host and device memory
 
     // graph data pre-process
-    acceleratorDataPreprocess(&graphDataInfo); // data prepare + data partition
+    acceleratorDataPreprocess(g_name, path_graph_dataset, &graphDataInfo); // data prepare + data partition
     // acceleratorCModelDataPreprocess(&graphDataInfo); // cmodel data preprocess, for verification
 
     // transfer host data to FPGA side
@@ -52,7 +53,7 @@ int main(int argc, char **argv) {
 
     // super step execution : set args and kernel run 
 
-    int super_step_num = 100;
+    int super_step_num = 10;
     auto start_kernel = chrono::steady_clock::now();
 
     for (int run_counter = 0 ; run_counter < super_step_num ; run_counter++) {

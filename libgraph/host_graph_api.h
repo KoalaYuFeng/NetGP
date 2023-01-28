@@ -18,7 +18,7 @@ typedef struct
 typedef struct
 {
     int vertexNum; // original vertex;
-    int edgeNum; // original edge number;
+    // int edgeNum; // original edge number;
 
     int compressedVertexNum;// delete vetices whose outdeg equal to 0;
     int alignedCompressedVertexNum; // make compressed vertex number aligned to 1024;
@@ -33,6 +33,7 @@ typedef struct
     std::vector<int> cia; // column index array after compression
 
     int partitionNum; // partition number;
+    std::vector<int> edgeNum; // store the edge number of each partition
     std::vector<std::vector<chunkInfo>> chunkProp; // partition -> subpartition -> prop
     std::vector<std::vector<int*>> chunkEdgeData; // partition -> subpartition -> edgelist;
     std::vector<std::vector<int*>> chunkTempData; // temp data, partition -> subpartition.
@@ -41,6 +42,7 @@ typedef struct
 
     int* chunkOutDegData;
     int* chunkOutRegData;
+    int* chunkApplyPropData;
 
 } graphInfo;
 
@@ -56,7 +58,7 @@ void resultTransfer(graphInfo *info, graphAccelerator *acc, int);
 /* host api -- dataflow */
 int acceleratorInit(std::string& file_name, graphInfo *info, graphAccelerator *acc);
 int acceleratorDataLoad(const std::string &gName, const std::string &mode, graphInfo *info);
-int acceleratorDataPreprocess(graphInfo *info);
+int acceleratorDataPreprocess(const std::string &gName, const std::string &mode, graphInfo *info);
 int acceleratorSuperStep(int superStep, graphInfo *info, graphAccelerator *acc);
 int acceleratorDeinit(void);
 

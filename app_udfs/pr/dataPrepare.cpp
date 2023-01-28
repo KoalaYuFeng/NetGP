@@ -1,5 +1,5 @@
-// #include "host_graph_api.h" // need to modify when comile single FPGA code
-#include "mpi_graph_api.h"
+#include "host_graph_api.h" // need to modify when comile single FPGA code
+// #include "mpi_graph_api.h"
 #include "fpga_application.h"
 #include <cmath>
 
