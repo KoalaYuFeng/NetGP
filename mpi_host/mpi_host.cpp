@@ -22,6 +22,8 @@ using namespace std;
 
 int main(int argc, char** argv) {
 
+    auto overall_start =  chrono::steady_clock::now();
+
     MPI_Init(NULL, NULL);
 
     int world_rank; // assume rank = 0 is the root node.
@@ -84,7 +86,12 @@ int main(int argc, char** argv) {
         auto start_kernel_superstep = chrono::steady_clock::now();
 
         for (int p_idx = 0; p_idx < graphDataInfo.partitionNum; p_idx++) { // for each partition
+            auto start_kernel_partition = chrono::steady_clock::now();
             accGatherScatterExecute (s, world_rank, p_idx, &graphDataInfo, &thunderGraph); // proc_id, partition_id, graph_info, acc_info;
+            auto end_kernel_partition = chrono::steady_clock::now();
+            std::cout << "[INFO] world_rank " << world_rank << " partition " << p_idx << " " \
+             << (chrono::duration_cast<chrono::microseconds>(end_kernel_partition - start_kernel_partition).count()) << " us " << std::endl;
+
             // std::cout << "Sync partition [" << p_idx << "] ...";
 
             // int p_temp_rx[PROCESSOR_NUM];
@@ -148,6 +155,8 @@ int main(int argc, char** argv) {
     std::cout << (chrono::duration_cast<chrono::microseconds>(end - start_kernel).count())/super_step<< " us" << std::endl;
 
     // need to add result transfer function
+    auto overll_end = chrono::steady_clock::now();
+    std::cout << (chrono::duration_cast<chrono::seconds>(overll_end - overall_start).count())<< " s" << std::endl;
 
     MPI_Barrier(MPI_COMM_WORLD);
     MPI_Finalize();

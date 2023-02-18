@@ -90,6 +90,7 @@ int acceleratorDataLoad(const std::string &gName, const std::string &mode, graph
         std::cout << "[ERROR] Index and Mapping file can not open!" << std::endl;
         return 0;
     }
+    std::cout << "[INFO] load mapping and outdeg files done! " << std::endl;
 
     info->compressedVertexNum = num_mapped;
     int aligned_vertex_num = ((num_mapped + PARTITION_SIZE - 1) / PARTITION_SIZE) * PARTITION_SIZE;
@@ -107,6 +108,7 @@ int acceleratorDataLoad(const std::string &gName, const std::string &mode, graph
     }
 
     for (int p = 0; p < num_partition; p++) {
+        std::cout << "[INFO] Allocate edge mem space in Host side ... partition : " << p << std::endl;
         for (int sp = 0; sp < SUB_PARTITION_NUM; sp++) {
             std::string edge_txt_name = mode + gName + "/p_" + std::to_string(p) + "_sp_" + std::to_string(sp) + ".txt";
             int edge_num = getTxtSize(edge_txt_name);
