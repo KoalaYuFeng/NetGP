@@ -8,7 +8,7 @@ print (dataset)
 
 for dataset_index in range(len(dataset)):
     
-    parent_path = './graph_dataset/'
+    parent_path = './graph_dataset_sub_12/'
     directory = dataset[dataset_index][0]
     path = os.path.join(parent_path, directory)
 
@@ -23,7 +23,7 @@ for dataset_index in range(len(dataset)):
     ## filename = '/data/graph_dataset/rmat-19-32.txt' ## take R19 for example
     ## filename = '/data/graph_dataset/rmat-12-4.txt'
     partition_size = 1024*1024 ## can be 1024*1024 or 512*1024
-    sub_partition_num = 3
+    sub_partition_num = 12
     UNMAPPED_FLAG = 2147483647 ## 0x7fffffff, max vertex index
     END_FLAG = 2147483646 ## 0x7fffffff - 1, end_flag value
     alignment_size = 4*1024 ## edge num of each sub-partition should be 4K align

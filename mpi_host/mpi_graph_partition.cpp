@@ -4,6 +4,7 @@
 #include <map>
 #include <algorithm>
 #include <fstream>
+#include <sstream>
 #include "mpi_graph_api.h"
 #include "mpi_host.h"
 // XRT includes
@@ -14,124 +15,113 @@
 #define EDEG_MEMORY_SIZE        ((edgeNum + (ALIGN_SIZE * 4) * 128) * 1)
 #define VERTEX_MEMORY_SIZE      (((vertexNum - 1)/MAX_VERTICES_IN_ONE_PARTITION + 1) * MAX_VERTICES_IN_ONE_PARTITION)
 
+int getPartitionNum (std::string dataset_name, int sub_partition_num) {
+    int p_index = 0;
+    int sp_index = 0;
+    for (int p = 0; p < 100; p++) {
+        for (int sp = 0; sp < 100; sp ++) {
+            std::string file_name = dataset_name + "/p_" + std::to_string(p) + "_sp_" + std::to_string(sp) + ".txt";
+            // std::cout << file_name << std::endl;
+            std::ifstream find_file(file_name.c_str());
+            if (find_file.good()) {
+                p_index = (p > p_index)? p: p_index;
+                sp_index = (sp > sp_index)? sp: sp_index;
+            }
+        }
+    }
+    if (sub_partition_num != (sp_index + 1)) { // double check input txt file.
+        std::cout << "[ERROR] SUBPARTITION TXT FILE NOT ALIGN !" <<std::endl;
+    }
+    return (p_index + 1);
+}
+
+int getTxtSize (std::string file_name) {
+    // std::cout << "[INFO] Getting file size ... " << file_name << " " ;
+    std::fstream file;
+    int line_num = 0;
+    file.open(file_name, std::ios::in);
+    if (file.is_open()) {
+        std::string temp;
+        while(getline(file, temp)) {
+            line_num ++;
+        }
+    }
+    file.close();
+    // std::cout << line_num << std::endl;
+    return line_num;
+}
 
 int acceleratorDataLoad(const std::string &gName, const std::string &mode, graphInfo *info)
 {
+    int num_partition = getPartitionNum(mode + gName, SUB_PARTITION_NUM);
+    info->partitionNum = num_partition;
 
-    int read_size= 0;
-    std::string name;
-    // read csr file : input row point array
-    name = mode + gName + "_rapi.bin";
-    std::ifstream fFileReader_rapi(name, std::ios::binary);
-	if (!fFileReader_rapi) {
-		std::cout << "graph rapi read file failed" << std::endl;
-		return -1;
-	}
-    read_size = 0;
-    fFileReader_rapi.read((char*)&read_size, sizeof(int)); // first number -> size;
-    std::cout << " rapi file read file size : "<< read_size << std::endl;
-    int* graph_rapi = new int[read_size];
-	fFileReader_rapi.read((char*)graph_rapi, read_size * sizeof(int));
-	fFileReader_rapi.close();
-
-    // read csr file : output row point array
-    name = mode + gName + "_rapo.bin";
-    std::ifstream fFileReader_rapo(name, std::ios::binary);
-	if (!fFileReader_rapo) {
-		std::cout << "graph rapo read file failed" << std::endl;
-		return -1;
-	}
-    read_size = 0;
-    fFileReader_rapo.read((char*)&read_size, sizeof(int)); // first number -> size;
-    std::cout << " rapo file read file size : "<< read_size << std::endl;
-    int vertex_num = read_size;
-    int* graph_rapo = new int[read_size];
-	fFileReader_rapo.read((char*)graph_rapo, read_size * sizeof(int));
-	fFileReader_rapo.close();
-
-    // read ciai file : input column array
-    name = mode + gName + "_ciai.bin";
-    std::ifstream fFileReader_ciai(name, std::ios::binary);
-	if (!fFileReader_ciai) {
-		std::cout << "graph ciai read file failed" << std::endl;
-		return -1;
-	}
-    read_size = 0;
-    fFileReader_ciai.read((char*)&read_size, sizeof(int)); // first number -> size;
-    std::cout << " ciai file read file size : "<< read_size << std::endl;
-    int edge_num = read_size;
-    int* graph_ciai = new int[read_size];
-	fFileReader_ciai.read((char*)graph_ciai, read_size * sizeof(int));
-	fFileReader_ciai.close();
-
+    int vertex_num = getTxtSize(mode + gName + "/index_mapping.txt");
     info->vertexNum = vertex_num;
-    info->edgeNum   = edge_num;
-    
-    // compress function : delete vertics whose OutDeg = 0;
+
+    // read vertex mapping file and outdeg file.
+    std::fstream mapping_file;
+    std::fstream out_deg_file;
     int num_mapped = 0;
-    int num_deleted = 0;
-
-    int* mapping_vertex_array = new int[vertex_num];
-    for (int i = 0; i < vertex_num; i++) {
-        mapping_vertex_array[i] = num_mapped;
-        int outdeg_tmp = graph_rapo[i + 1] - graph_rapo[i];
-        if (outdeg_tmp > 0) {
-            info->outDeg.push_back(outdeg_tmp);
-            info->vertexMapping.push_back(i);
-            num_mapped++;
-        } else {
-            info->outDegZeroIndex.push_back(i);
-            num_deleted++;
+    mapping_file.open(mode + gName + "/index_mapping.txt", std::ios::in);
+    out_deg_file.open(mode + gName + "/outDeg.txt", std::ios::in);
+    if (mapping_file.is_open() && out_deg_file.is_open()) {
+        std::string mapping_t, out_deg_t;
+        int int_map_t, int_deg_t;
+        int line_num_t = 0;
+        while ((getline(mapping_file, mapping_t)) && (getline(out_deg_file, out_deg_t))) {
+            line_num_t++;
+            int_map_t = stoi(mapping_t);
+            int_deg_t = stoi(out_deg_t);
+            if ((int_map_t != 2147483647) && (int_deg_t != 0)) { // predefine 2147483647 as a invalid value
+                info->outDeg.push_back(int_deg_t);
+                info->vertexMapping.push_back(int_map_t);
+                num_mapped++;
+            } else if ((int_map_t == 2147483647) && (int_deg_t == 0)) {
+                info->outDegZeroIndex.push_back(line_num_t);
+            } else {
+                std::cout << "[ERROR] Mapping file not equals to Outdeg file!" << std::endl;
+            }
         }
-    }
-
-    if ((num_mapped + num_deleted) != vertex_num) {
-        std::cout << "graph vertex compress error!" << std::endl; // double check
+        if (line_num_t != vertex_num) { // double check
+            std::cout << "[ERROR] Mapping and OutDeg file size not align!" << std::endl;
+        }
+    } else {
+        std::cout << "[ERROR] Index and Mapping file can not open!" << std::endl;
+        return 0;
     }
 
     info->compressedVertexNum = num_mapped;
-
-    int aligned_vertex_num = ((num_mapped + 1023)/1024)*1024;
+    int aligned_vertex_num = ((num_mapped + PARTITION_SIZE - 1) / PARTITION_SIZE) * PARTITION_SIZE;
     info->alignedCompressedVertexNum = aligned_vertex_num;
-
-    std::cout << "Vertex compress: original : "<< vertex_num << " compressed : "<< num_mapped << " aligned: "<< aligned_vertex_num << std::endl;
-
-    // compress function : delete edges whose dest vertex's OutDeg = 0;
-    int num_compress_edge = 0;
-    info->rpa.resize(num_mapped + 1);
-    info->rpa[0] = 0;
-    for (int j = 0; j < num_mapped; j++) {
-        int in_deg_tmp = graph_rapi[info->vertexMapping[j]+1] - graph_rapi[info->vertexMapping[j]];
-        info->rpa[j+1] = info->rpa[j] + in_deg_tmp;
-        int bias = graph_rapi[info->vertexMapping[j]];
-        for (int k = 0; k < in_deg_tmp; k++) {
-            info->cia.push_back(mapping_vertex_array[graph_ciai[bias + k]]);
-            info->destIndexList.push_back(j); // for time optimization in partition function.
-            num_compress_edge++;
-        }
-    }
-
-    if ( num_compress_edge != info->rpa[num_mapped]) {
-        std::cout << "graph edge compress error!" << std::endl; // double check
-    }
-
-    std::cout << "Edge compress: original : "<< edge_num << " compressed : "<< num_compress_edge << std::endl;
-    info->compressedEdgeNum = num_compress_edge;
-
-    delete []graph_rapo;
-    delete []graph_rapi;
-    delete []graph_ciai;
-
-    // calculate partition number and edge number in each subpartition
-    int num_partition = (num_mapped + PARTITION_SIZE - 1) / PARTITION_SIZE; // PARTITION_SIZE align
-    int num_subpartition = SUB_PARTITION_NUM;
-    info->partitionNum = num_partition;
-
-    int vertex_index_start = 0;
-    int vertex_index_end = 0;
 
     info->chunkProp.resize(num_partition);
     info->chunkEdgeData.resize(num_partition);
+    info->chunkTempData.resize(num_partition);
+    info->chunkPropData.resize(SUB_PARTITION_NUM);
+    info->chunkPropDataNew.resize(SUB_PARTITION_NUM);
+    for (int i = 0; i < num_partition; i++) {
+        info->chunkProp[i].resize(SUB_PARTITION_NUM);
+        info->chunkEdgeData[i].resize(SUB_PARTITION_NUM);
+        info->chunkTempData[i].resize(SUB_PARTITION_NUM);
+    }
+
+    for (int p = 0; p < num_partition; p++) {
+        for (int sp = 0; sp < SUB_PARTITION_NUM; sp++) {
+            std::string edge_txt_name = mode + gName + "/p_" + std::to_string(p) + "_sp_" + std::to_string(sp) + ".txt";
+            int edge_num = getTxtSize(edge_txt_name);
+            info->chunkProp[p][sp].edgeNumChunk = edge_num;
+            info->chunkEdgeData[p][sp] = new int[edge_num * 2]; // each edge has 2 vertics.
+            info->chunkPropData[sp] = new int[info->alignedCompressedVertexNum];
+            info->chunkPropDataNew[sp] = new int[info->alignedCompressedVertexNum];
+            info->chunkTempData[p][sp] = new int[PARTITION_SIZE];
+
+            std::fill_n(info->chunkTempData[p][sp], PARTITION_SIZE, 0);
+            std::fill_n(info->chunkPropData[sp], info->alignedCompressedVertexNum, 0);
+            std::fill_n(info->chunkPropDataNew[sp], info->alignedCompressedVertexNum, 0);
+            std::fill_n(info->chunkEdgeData[p][sp], edge_num * 2, 0);
+        }
+    }
 
     info->chunkOutDegData = new int[info->alignedCompressedVertexNum];
     info->chunkOutRegData = new int[info->alignedCompressedVertexNum];
@@ -140,127 +130,54 @@ int acceleratorDataLoad(const std::string &gName, const std::string &mode, graph
     std::fill_n(info->chunkOutRegData, info->alignedCompressedVertexNum, 0);
     std::fill_n(info->chunkApplyPropData, info->alignedCompressedVertexNum, 0);
 
-    info->chunkTempData.resize(num_partition);
-    info->chunkPropData.resize(SUB_PARTITION_NUM);
-    info->chunkPropDataNew.resize(SUB_PARTITION_NUM);
-
-    for (int i = 0; i < num_partition; i++) {
-        info->chunkProp[i].resize(num_subpartition);
-        info->chunkEdgeData[i].resize(num_subpartition);
-        info->chunkTempData[i].resize(num_subpartition);
-    }
-
-    for (int p = 0; p < num_partition; p++) {
-
-        vertex_index_start = p * PARTITION_SIZE;
-        vertex_index_end = ((p+1)*PARTITION_SIZE > num_mapped)? num_mapped : (p+1)*PARTITION_SIZE;
-
-        int edge_num_tmp = 0;
-        edge_num_tmp = info->rpa[vertex_index_end] - info->rpa[vertex_index_start]; // for each partition
-        edge_num_tmp = (edge_num_tmp + num_subpartition - 1) / num_subpartition; // for each subpartition;
-        edge_num_tmp = ((edge_num_tmp + ALIGN_SIZE - 1) / ALIGN_SIZE) * ALIGN_SIZE; // for alignment
-
-        for (int sp = 0; sp < num_subpartition; sp++) {
-            info->chunkProp[p][sp].edgeNumChunk = edge_num_tmp;
-            info->chunkProp[p][sp].destVertexNumChunk = (vertex_index_end - vertex_index_start + 1023)/1024 *1024; // aligned vertex number
-
-            info->chunkEdgeData[p][sp] = new int[edge_num_tmp * 2]; // each edge has 2 vertics.
-            info->chunkTempData[p][sp] = new int[vertex_index_end - vertex_index_start];
-            info->chunkPropData[sp] = new int[info->alignedCompressedVertexNum];
-            info->chunkPropDataNew[sp] = new int[info->alignedCompressedVertexNum];
-
-            std::fill_n(info->chunkTempData[p][sp], vertex_index_end - vertex_index_start, 0);
-            std::fill_n(info->chunkPropData[sp], info->alignedCompressedVertexNum, 0);
-            std::fill_n(info->chunkPropDataNew[sp], info->alignedCompressedVertexNum, 0);
-            std::fill_n(info->chunkEdgeData[p][sp], edge_num_tmp * 2, 0);
-        }
-
-        // std::cout << "Partition "<< p <<" start index "<< vertex_index_start << " end index "<< vertex_index_end << std::endl;
-        // std::cout << "Edge number: partion "<< edge_num_tmp * num_subpartition << " subpartion "<< edge_num_tmp << std::endl;
-    }
-
-    delete [] mapping_vertex_array;
     return 0;
 }
 
-void partitionFunction(graphInfo *info)
+void partitionFunction(const std::string &gName, const std::string &mode, graphInfo *info)
 {
-    std::cout << "[INFO] Start partition function " << std::endl;
-    int vertex_index_start = 0;
-    int vertex_index_end = 0;
+    std::cout << "[INFO] load edge txt file after partition ... " << std::endl;
 
-    std::vector<std::multimap<int, int>> edge_list;
-    edge_list.resize(info->partitionNum);
-    
     for (int p = 0; p < info->partitionNum; p++) {
-
-        vertex_index_start = p * PARTITION_SIZE;
-        vertex_index_end = ((p+1)*PARTITION_SIZE > (info->compressedVertexNum)) ? (info->compressedVertexNum) : (p+1)*PARTITION_SIZE;
-
-        for (int i = info->rpa[vertex_index_start]; i < info->rpa[vertex_index_end]; i++) {
-            edge_list[p].insert(std::pair<int, int>(info->cia[i], info->destIndexList[i]));
-        }
-
-        for (int i = info->rpa[vertex_index_start]; i < info->rpa[vertex_index_end];) {
-            auto it = edge_list[p].cbegin();
-            for (int sp = 0; sp < SUB_PARTITION_NUM; sp++) {
-                int max = 0;
-                int min = 0;
-                for (int ii = 0; ii < info->chunkProp[p][sp].edgeNumChunk; ii++) {
-                    if (info->rpa[vertex_index_end] <= (sp*info->chunkProp[p][sp].edgeNumChunk + ii + info->rpa[vertex_index_start])) {
-                        info->chunkEdgeData[p][sp][ii*2] = vertex_index_end - 1;
-                        info->chunkEdgeData[p][sp][ii*2 + 1] = ENDFLAG - 1; // GS will not process this edge, just for alignment;
-                    } else {
-                        info->chunkEdgeData[p][sp][ii*2] = (*it).first; // source vertex
-                        info->chunkEdgeData[p][sp][ii*2 + 1] = (*it).second; // dest vertex
-
-                        max = (info->cia[i] > max) ? info->cia[i] : max;
-                        min = (info->cia[i] > min) ? min : info->cia[i];
-
-                        i++;
-                        it++;
+        for (int sp = 0; sp < SUB_PARTITION_NUM; sp++) {
+            std::string file_name = mode + gName + "/p_" + std::to_string(p) + "_sp_" + std::to_string(sp) + ".txt";
+            std::fstream file;
+            file.open(file_name, std::ios::in);
+            if (file.is_open()) {
+                std::string tp, s_tp;
+                int i = 0, line = 0;
+                int data_t[2];
+                while(getline(file, tp)) {
+                    std::stringstream ss(tp);
+                    while (getline(ss, s_tp, ' ')) {
+                        data_t[i] = stoi(s_tp);
+                        i = (i + 1) % 2;
                     }
+                    if (data_t[1] == 2147483646) {
+                        info->chunkEdgeData[p][sp][line*2] = data_t[0];
+                        info->chunkEdgeData[p][sp][line*2 + 1] = ENDFLAG - 1;
+                    } else {
+                        info->chunkEdgeData[p][sp][line*2] = data_t[0];
+                        info->chunkEdgeData[p][sp][line*2 + 1] = data_t[1];
+                    }
+
+                    // for debug
+                    // std::cout << "[DEBUG] Line = " << line << " EDGE = " << info->chunkEdgeData[p][sp][line*2] << " " << info->chunkEdgeData[p][sp][line*2 + 1] << std::endl;
+                    line++;
                 }
-                info->chunkProp[p][sp].srcVertexNumChunk = max - min;
+                file.close(); // close the file object.
+            } else {
+                std::cout << "[ERROR] can not open edge list file " << file_name << std::endl;
             }
         }
-        std::cout << " Partition " << p << " index range: " << vertex_index_start << "," << vertex_index_end << " Done" << std::endl;
-        std::multimap<int, int>().swap(edge_list[p]); // free memory
     }
 
-    std::vector<std::multimap<int, int>>().swap(edge_list); // free memory
-
-    // ===============  Print information  ================
-    // for (int p = 6; p < info->partitionNum; p++) {
-    //     for (int sp = 0; sp < SUB_PARTITION_NUM; sp++) {
-    //         for (int ii = 0; ii < info->chunkProp[p][sp].edgeNumChunk * 2; ii++) {
-
-    //             std::cout << "E[" << p << "][" << sp << "][" << ii << "]:" << info->chunkEdgeData[p][sp][ii] << " ";
-    //             if ((ii+1) % 2 == 0) std::cout << std::endl;
-    //             // if ((ii % 2 == 1) && (info->chunkEdgeData[p][sp][ii] == 1)) {
-    //             //     std::cout << "edge :"<< info->chunkEdgeData[p][sp][ii - 1] <<" "<< info->chunkEdgeData[p][sp][ii]<<" ";
-    //             //     std::cout << "prop :"<< info->chunkPropData[sp][info->chunkEdgeData[p][sp][ii - 1]];
-    //             //     std::cout << std::endl;
-    //             // }
-    //             // std::cout << "["<<p<<"]["<<sp<<"]["<<ii<<"]:"<<info->chunkEdgeData[p][sp][ii]<<" ";
-    //             // if ((ii + 1) % 2 == 0) std::cout<<std::endl;
-    //         }
-    //     }
-    // }
-
-    // for (int sp = 0; sp < SUB_PARTITION_NUM; sp++) {
-    //     for (int i = 0; i < info->alignedCompressedVertexNum; i++) {
-    //         std::cout << "[" << i <<"] "<< info->chunkPropData[sp][i] << " ";
-    //         if ((i+1) % 10 == 0) std::cout<<std::endl;
-    //     }
-    // }
-
+    std::cout << "[INFO] load edge txt file done ! " << std::endl;
 }
 
-int acceleratorDataPreprocess(graphInfo *info)
+int acceleratorDataPreprocess(const std::string &gName, const std::string &mode, graphInfo *info)
 {
     // schedulerRegister();
     dataPrepareProperty(info);
-    partitionFunction(info);
+    partitionFunction(gName, mode, info);
     return 0;
 }

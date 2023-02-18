@@ -41,14 +41,15 @@ int main(int argc, char** argv) {
     // Read settings
     std::string binary_file;
     if (world_rank == 0) { // root node
-        binary_file = "./acc_root.xclbin";
+        binary_file = "./xclbin_3SLRs/acc_root.xclbin";
     } else if (world_rank == (world_size - 1)) { // last node;
-        binary_file = "./acc_last_hw_sync.xclbin";
+        binary_file = "./xclbin_3SLRs/acc_last_hw_sync.xclbin";
     } else { // middle nodes
-        binary_file = "./acc_middle.xclbin";
+        binary_file = "./xclbin_3SLRs/acc_middle.xclbin";
     }
     std::string g_name = parser.value("dataset");
-    std::string path_graph_dataset = "/data/binary_graph_dataset/";
+    // std::string path_graph_dataset = "/data/binary_graph_dataset/";
+    std::string path_graph_dataset = "/data/yufeng/graph_partition/graph_dataset_sub_12/"; // use txt data after partition to decrease preprocessing time.
 
     // load graph
     acceleratorDataLoad(g_name, path_graph_dataset, &graphDataInfo); // each processor holds full graph.
@@ -59,7 +60,7 @@ int main(int argc, char** argv) {
     std::cout << "[INFO] Processor " << world_rank << " acc init done " << std::endl;
 
     // graph data pre-process
-    acceleratorDataPreprocess(&graphDataInfo); // data prepare + data partition
+    acceleratorDataPreprocess(g_name, path_graph_dataset, &graphDataInfo); // data prepare + data partition
     std::cout << "[INFO] Processor " << world_rank << " graph preprocess done " << std::endl;
     // acceleratorCModelDataPreprocess(&graphDataInfo); // cmodel data preprocess, for verification
 

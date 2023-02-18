@@ -181,7 +181,7 @@ int acceleratorInit(int world_rank, int world_size, std::string& file_name,  gra
             acc->propBuffer[j] = xrt::bo(acc->graphDevice, prop_size_bytes, acc->gsKernel[j].group_id(1));
             info->chunkPropData[proc_j] = acc->propBuffer[j].map<int*>();
 
-            temp_prop_size = info->chunkProp[i][proc_j].destVertexNumChunk * sizeof(int); // temp vertex size
+            temp_prop_size = PARTITION_SIZE * sizeof(int); // temp vertex size
             acc->tempBuffer[i][j] = xrt::bo(acc->graphDevice, temp_prop_size, acc->gsKernel[j].group_id(1));
             info->chunkTempData[i][proc_j] = acc->tempBuffer[i][j].map<int*>();
         }
@@ -202,7 +202,7 @@ int acceleratorInit(int world_rank, int world_size, std::string& file_name,  gra
             acc->subBuffer[p].resize(SUB_PARTITION_NUM / PROCESSOR_NUM);
             for (int sp = 0; sp < (SUB_PARTITION_NUM / PROCESSOR_NUM); sp++) {
                 int proc_sp = sp * PROCESSOR_NUM + world_rank;
-                int size_tmp = info->chunkProp[p][proc_sp].destVertexNumChunk * sizeof(int);
+                int size_tmp = PARTITION_SIZE * sizeof(int);
                 int offset_tmp = p * PARTITION_SIZE * sizeof(int);
                 acc->subNewBuffer[p][sp] = xrt::bo(acc->propBufferNew[sp], size_tmp, offset_tmp); // size, offset
                 acc->subBuffer[p][sp] = xrt::bo(acc->propBuffer[sp], size_tmp, offset_tmp);
