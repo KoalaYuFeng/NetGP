@@ -10,6 +10,8 @@
 #define ALIGN_SIZE              (BURSTBUFFERSIZE * 16 * 2)
 #define ENDFLAG                 0xffffffff
 
+#define USE_SCHEDULER           false
+
 void partitionTransfer(int world_rank, graphInfo *info, graphAccelerator *acc);
 void setAccKernelArgs(int world_rank, int world_size, graphInfo *info, graphAccelerator * acc);
 int acceleratorInit(int world_rank, int world_size, std::string& file_name,  graphInfo *info, graphAccelerator* acc);

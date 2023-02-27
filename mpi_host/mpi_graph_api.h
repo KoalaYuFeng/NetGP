@@ -29,6 +29,8 @@ typedef struct
     std::vector<int> rpa; // row point array after compression
     std::vector<int> cia; // column index array after compression
 
+    std::vector<std::vector<int>> order; // used for task scheduling.
+
     int partitionNum; // partition number;
     std::vector<std::vector<chunkInfo>> chunkProp; // partition -> subpartition -> prop
     std::vector<std::vector<int*>> chunkEdgeData; // partition -> subpartition -> edgelist;

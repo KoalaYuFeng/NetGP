@@ -1,14 +1,14 @@
 import numpy as np
 import os
 
-dataset = [['R19', 'rmat-19-32.txt'], ['R21','rmat-21-32.txt'], ['R24','rmat-24-16.txt'], ['G23', 'graph500-scale23-ef16_adj.edges'],
-           ['G24', 'graph500-scale24-ef16_adj.edges'], ['G25', 'graph500-scale25-ef16_adj.edges'], ['WP', 'wikipedia-20070206.mtx'], 
-           ['HW', 'ca-hollywood-2009.mtx'], ['LJ', 'LiveJournal1.txt'], ['TW', 'soc-twitter-2010.mtx'], ['R12', 'rmat-12-4.txt']]
+dataset = [['R12', 'rmat-12-4.txt'], ['WP', 'wikipedia-20070206.mtx'], ['HW', 'ca-hollywood-2009.mtx'], ['LJ', 'LiveJournal1.txt'], ['TW', 'soc-twitter-2010.mtx'], 
+           ['R19', 'rmat-19-32.txt'], ['R21','rmat-21-32.txt'], ['R24','rmat-24-16.txt'], ['G23', 'graph500-scale23-ef16_adj.edges'],
+           ['G24', 'graph500-scale24-ef16_adj.edges'], ['G25', 'graph500-scale25-ef16_adj.edges']]
 print (dataset)
 
 for dataset_index in range(len(dataset)):
     
-    parent_path = './graph_dataset_sub_12/'
+    parent_path = './graph_dataset_sub_12_change/'
     directory = dataset[dataset_index][0]
     path = os.path.join(parent_path, directory)
 
@@ -102,14 +102,25 @@ for dataset_index in range(len(dataset)):
         edge_num_p = edge_num_p/sub_partition_num
         edge_num_p = np.int32((edge_num_p + alignment_size - 1)/alignment_size) * alignment_size
 
+        edge_idx = 0
+        edge_idx_t = 0
         for j in range(sub_partition_num):
             array_sp = np.zeros((edge_num_p, 2),dtype = np.int32)
             for k in range(edge_num_p):
-                if ((j*edge_num_p + k) >= len(array_temp)):
+                if ((k*sub_partition_num + j) >= len(array_temp)):
+                    edge_idx = edge_idx_t
+                    edge_idx_t = 0
                     array_sp[k][0] = array_temp[len(array_temp)-1][0]
                     array_sp[k][1] = END_FLAG
-                else:    
-                    array_sp[k, :] = array_temp[j*edge_num_p + k, :]
+                else:
+                    array_sp[k, :] = array_temp[edge_idx + k, :]
+                    edge_idx_t += 1
+
+                # if ((j*edge_num_p + k) >= len(array_temp)):
+                #     array_sp[k][0] = array_temp[len(array_temp)-1][0]
+                #     array_sp[k][1] = END_FLAG
+                # else:    
+                #     array_sp[k, :] = array_temp[j*edge_num_p + k, :]
             
             ## sort sub-partition array
             array_sp = array_sp[np.lexsort([array_sp.T[0]])]

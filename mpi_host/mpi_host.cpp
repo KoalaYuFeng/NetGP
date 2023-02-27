@@ -26,7 +26,7 @@ int main(int argc, char** argv) {
 
     MPI_Init(NULL, NULL);
 
-    int world_rank; // assume rank = 0 is the root node.
+    int world_rank; // assume rank = 0 -> GAS worker, other -> GS worker. 
     MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
     int world_size;
     MPI_Comm_size(MPI_COMM_WORLD, &world_size);
@@ -43,11 +43,9 @@ int main(int argc, char** argv) {
     // Read settings
     std::string binary_file;
     if (world_rank == 0) { // root node
-        binary_file = "./xclbin_3SLRs/acc_root.xclbin";
-    } else if (world_rank == (world_size - 1)) { // last node;
-        binary_file = "./xclbin_3SLRs/acc_last_hw_sync.xclbin";
-    } else { // middle nodes
-        binary_file = "./xclbin_3SLRs/acc_middle.xclbin";
+        binary_file = "./xclbin_3SLRs_rel/GAS_worker.xclbin";
+    } else {
+        binary_file = "./xclbin_3SLRs_rel/GS_worker.xclbin";
     }
     std::string g_name = parser.value("dataset");
     // std::string path_graph_dataset = "/data/binary_graph_dataset/";
@@ -68,9 +66,11 @@ int main(int argc, char** argv) {
 
     // transfer host data to FPGA side
     partitionTransfer(world_rank, &graphDataInfo, &thunderGraph);
+    std::cout << "[INFO] Processor " << world_rank << " partitionTransfer done " << std::endl;
 
     // set acclerator kernel args.
     setAccKernelArgs(world_rank, world_size, &graphDataInfo, &thunderGraph);
+    std::cout << "[INFO] Processor " << world_rank << " setAccKernelArgs done " << std::endl;
 
     // need to sync before super step execution
 
@@ -85,12 +85,8 @@ int main(int argc, char** argv) {
         MPI_Barrier(MPI_COMM_WORLD); // sync barrier;
         auto start_kernel_superstep = chrono::steady_clock::now();
 
-        for (int p_idx = 0; p_idx < graphDataInfo.partitionNum; p_idx++) { // for each partition
-            auto start_kernel_partition = chrono::steady_clock::now();
+        for (int p_idx = 0; p_idx < graphDataInfo.partitionNum; p_idx++) { // for each partition 
             accGatherScatterExecute (s, world_rank, p_idx, &graphDataInfo, &thunderGraph); // proc_id, partition_id, graph_info, acc_info;
-            auto end_kernel_partition = chrono::steady_clock::now();
-            std::cout << "[INFO] world_rank " << world_rank << " partition " << p_idx << " " \
-             << (chrono::duration_cast<chrono::microseconds>(end_kernel_partition - start_kernel_partition).count()) << " us " << std::endl;
 
             // std::cout << "Sync partition [" << p_idx << "] ...";
 

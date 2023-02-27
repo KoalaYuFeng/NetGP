@@ -51,6 +51,34 @@ int getTxtSize (std::string file_name) {
     return line_num;
 }
 
+void schedulerFunction(const std::string &gName, const std::string &mode, graphInfo *info)
+{
+    std::cout << "[INFO] task scheduler, load order file ... " << std::endl;
+
+    info->order.resize(info->partitionNum);
+    for (int i = 0; i < info->partitionNum; i++) {
+        info->order[i].resize(SUB_PARTITION_NUM);
+    }
+
+    std::string file_name = mode + gName + "/order.txt";
+    std::fstream file;
+    file.open(file_name, std::ios::in);
+    if (file.is_open()) {
+        std::string temp_line, temp_word;
+        int line = 0;
+        while(getline(file, temp_line)) {
+            std::stringstream ss(temp_line);
+            int i = 0;
+            while (getline(ss, temp_word, ' ')) {
+                info->order[line][i] = stoi(temp_word);
+                i += 1;
+            }
+            line += 1;
+        }
+    }
+    file.close();
+}
+
 int acceleratorDataLoad(const std::string &gName, const std::string &mode, graphInfo *info)
 {
     int num_partition = getPartitionNum(mode + gName, SUB_PARTITION_NUM);
@@ -132,6 +160,8 @@ int acceleratorDataLoad(const std::string &gName, const std::string &mode, graph
     std::fill_n(info->chunkOutRegData, info->alignedCompressedVertexNum, 0);
     std::fill_n(info->chunkApplyPropData, info->alignedCompressedVertexNum, 0);
 
+    schedulerFunction(gName, mode, info); // load scheduler txt order file.
+
     return 0;
 }
 
@@ -141,7 +171,8 @@ void partitionFunction(const std::string &gName, const std::string &mode, graphI
 
     for (int p = 0; p < info->partitionNum; p++) {
         for (int sp = 0; sp < SUB_PARTITION_NUM; sp++) {
-            std::string file_name = mode + gName + "/p_" + std::to_string(p) + "_sp_" + std::to_string(sp) + ".txt";
+            int order_idx = (USE_SCHEDULER == true)? info->order[p][sp] : sp;
+            std::string file_name = mode + gName + "/p_" + std::to_string(p) + "_sp_" + std::to_string(order_idx) + ".txt";
             std::fstream file;
             file.open(file_name, std::ios::in);
             if (file.is_open()) {
@@ -149,7 +180,7 @@ void partitionFunction(const std::string &gName, const std::string &mode, graphI
                 int i = 0, line = 0;
                 int data_t[2];
                 while(getline(file, tp)) {
-                    std::stringstream ss(tp);
+                std::stringstream ss(tp);
                     while (getline(ss, s_tp, ' ')) {
                         data_t[i] = stoi(s_tp);
                         i = (i + 1) % 2;
@@ -161,9 +192,6 @@ void partitionFunction(const std::string &gName, const std::string &mode, graphI
                         info->chunkEdgeData[p][sp][line*2] = data_t[0];
                         info->chunkEdgeData[p][sp][line*2 + 1] = data_t[1];
                     }
-
-                    // for debug
-                    // std::cout << "[DEBUG] Line = " << line << " EDGE = " << info->chunkEdgeData[p][sp][line*2] << " " << info->chunkEdgeData[p][sp][line*2 + 1] << std::endl;
                     line++;
                 }
                 file.close(); // close the file object.
