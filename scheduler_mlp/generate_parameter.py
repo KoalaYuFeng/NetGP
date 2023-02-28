@@ -2,9 +2,14 @@ import numpy as np
 import os
 
 ## load partitioned txt file.
-dataset_name = 'G25'
-partition_num = 2
+dataset_name = 'G23'
+
+partition_num = 0
 subpartition_num = 12
+for i in range(100):
+    filename = '/data/yufeng/graph_partition/graph_dataset_sub_12/' + dataset_name + '/p_' + str(i) + '_sp_' + str(0) + '.txt'
+    if (os.path.exists(filename) == True):
+        partition_num = i + 1
 
 parameter_array = np.zeros((partition_num * subpartition_num, 4), dtype=np.int32)
 print (parameter_array)

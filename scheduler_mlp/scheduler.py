@@ -23,7 +23,7 @@ class MLP(nn.Module):
         return x
 
 ## load partitioned txt file.
-dataset_name = 'R21'
+dataset_name = 'TW'
 subpartition_num = 12
 filename = './' + dataset_name + '_parameter.txt'
 data_array = np.float32(np.loadtxt(filename))
@@ -40,14 +40,12 @@ with torch.no_grad():
     inputs = torch.from_numpy(data_array[:, :2])
     outputs = cost_model(inputs)
     result_pred = np.int32(outputs.numpy() * scale_time)
-    print('get the predicted time')
-    print(result_pred)
-    print(result_pred.shape)
+    print('get the predicted time for each subpartition ')
+    print(result_pred.T)
 
 
 print('start scheduling ... ')
 schedule_list = np.zeros((subpartition_num, partition_num+1), dtype = np.int32)
-print (schedule_list)
 
 for p in range(partition_num):
     temp_p = np.arange(subpartition_num)
@@ -56,5 +54,16 @@ for p in range(partition_num):
     temp_s = result_pred[subpartition_num*p : subpartition_num*(p+1), 0]
     schedule_list[:, 0] += temp_s.T[temp_p]
     schedule_list = schedule_list[np.argsort(-1*schedule_list[:, 0].T), :]
-    print(schedule_list)
+    ## print(schedule_list)
+
+
+print('Final estimate time ')
+estimate_time = schedule_list[:, 0].T
+print(estimate_time)
+
+print('Final execution order ')
+exe_order = schedule_list[:, 1:].T
+print(exe_order)
+np.savetxt(dataset_name + '_order.txt', exe_order, fmt='%d', delimiter=' ')
+np.savetxt('/data/yufeng/graph_partition/graph_dataset_sub_12/' + dataset_name + '_order.txt', exe_order, fmt='%d', delimiter=' ')
 
