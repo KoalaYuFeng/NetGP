@@ -43,9 +43,9 @@ int main(int argc, char** argv) {
     // Read settings
     std::string binary_file;
     if (world_rank == 0) { // root node
-        binary_file = "./xclbin_3SLRs_rel/GAS_worker.xclbin";
+        binary_file = "./xclbin_3SLRs_overlap/GAS_worker.xclbin";
     } else {
-        binary_file = "./xclbin_3SLRs_rel/GS_worker.xclbin";
+        binary_file = "./xclbin_3SLRs_overlap/GS_worker.xclbin";
     }
     std::string g_name = parser.value("dataset");
     // std::string path_graph_dataset = "/data/binary_graph_dataset/";
@@ -131,11 +131,11 @@ int main(int argc, char** argv) {
 
         // std::cout << world_rank << "[INFO] Apply kernel wait in superstep " << s << "... ";
 
-        accApplyStart (world_rank, world_size, &graphDataInfo, &thunderGraph);
+        // accApplyStart (world_rank, world_size, &graphDataInfo, &thunderGraph);
 
         // MPI_Barrier(MPI_COMM_WORLD); // sync barrier;
 
-        accApplyEnd (world_rank, world_size, &graphDataInfo, &thunderGraph); // wait kernel done;
+        // accApplyEnd (world_rank, world_size, &graphDataInfo, &thunderGraph); // wait kernel done;
 
         // MPI_Barrier(MPI_COMM_WORLD); // sync barrier;
 

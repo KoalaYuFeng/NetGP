@@ -96,8 +96,8 @@ int acceleratorInit(int world_rank, int world_size, std::string& file_name,  gra
         acc->mergeKernel[i] = xrt::kernel(acc->graphDevice, acc->graphUuid, krnl_name.c_str());
         krnl_name = "streamForward:{streamForward_" + id + "}";
         acc->forwardKernel[i] = xrt::kernel(acc->graphDevice, acc->graphUuid, krnl_name.c_str());
-        krnl_name = "readVertex:{readVertex_" + id + "}";
-        acc->readKernel[i] = xrt::kernel(acc->graphDevice, acc->graphUuid, krnl_name.c_str());
+        // krnl_name = "readVertex:{readVertex_" + id + "}";
+        // acc->readKernel[i] = xrt::kernel(acc->graphDevice, acc->graphUuid, krnl_name.c_str());
         krnl_name = "writeVertex:{writeVertex_" + id + "}";
         acc->writeKernel[i] = xrt::kernel(acc->graphDevice, acc->graphUuid, krnl_name.c_str());
     }
@@ -187,24 +187,41 @@ int accGatherScatterExecute (int super_step, int world_rank, int partition, grap
 
     if (partition < 0) return -1; // check the right parition id;
 
+    if (world_rank == 0) {
+        acc->applyRun.set_arg(0, acc->propApplyBuffer);
+        acc->applyRun.start();
+        acc->syncRun.start();
+    }
+
     int p = partition;
     for (int sp = 0; sp < (SUB_PARTITION_NUM / PROCESSOR_NUM); sp++) {
         // auto start = std::chrono::steady_clock::now();
         int isp = world_rank + sp * PROCESSOR_NUM;
         acc->gsRun[sp].set_arg(0, acc->edgeBuffer[p][sp]);
         acc->gsRun[sp].set_arg(1, acc->propBuffer[sp]);
-        acc->gsRun[sp].set_arg(2, acc->tempBuffer[p][sp]);
         acc->gsRun[sp].set_arg(3, info->chunkProp[p][isp].edgeNumChunk * 2);
         acc->gsRun[sp].start();
-
-        // acc->gsRun[sp].wait();
-        // auto end = std::chrono::steady_clock::now();
-        // std::cout << "[Schedule] world_rank " << world_rank << " sp = " << sp << " cost = "
-        // << (std::chrono::duration_cast<std::chrono::microseconds>(end - start).count()) << " us " << std::endl;
+        acc->mergeRun[sp].set_arg(3, 1);
+        acc->mergeRun[sp].start();
+        acc->forwardRun[sp].set_arg(3, 1); // dest = 1;
+        acc->forwardRun[sp].start();
+        acc->writeRun[sp].set_arg(0, acc->subNewBuffer[p][sp]);
+        acc->writeRun[sp].start();
     }
+
+    std::cout << "[DEBUG INFO] start done .. " << std::endl;
 
     for (int sp = 0; sp < (SUB_PARTITION_NUM / PROCESSOR_NUM); sp++) {
         acc->gsRun[sp].wait();
+        acc->mergeRun[sp].wait();
+        acc->forwardRun[sp].wait();
+        acc->writeRun[sp].wait();
+    }
+    std::cout << "[DEBUG INFO] wait done  .. " << std::endl;
+    if (world_rank == 0) {
+        acc->applyRun.wait();
+        acc->syncRun.wait();
+        std::cout << "[DEBUG INFO] rank = 0 wait done  .. " << std::endl;
     }
 
     return partition;
@@ -341,21 +358,21 @@ void setAccKernelArgs(int world_rank, int world_size, graphInfo *info, graphAcce
         for (int sp = 0; sp < (SUB_PARTITION_NUM / PROCESSOR_NUM); sp++) {
             acc->gsRun[sp] = xrt::run(acc->gsKernel[sp]);
             acc->gsRun[sp].set_arg(4, 0);
-            acc->gsRun[sp].set_arg(5, info->alignedCompressedVertexNum);
+            acc->gsRun[sp].set_arg(5, PARTITION_SIZE); // should be dest vertex number, but I align, need modify
         }
     }
 
 #if USE_APPLY
 
     for (int sp = 0; sp < (SUB_PARTITION_NUM / PROCESSOR_NUM); sp++) {
-        acc->readRun[sp] = xrt::run(acc->readKernel[sp]);
-        acc->readRun[sp].set_arg(2, info->alignedCompressedVertexNum);
+        // acc->readRun[sp] = xrt::run(acc->readKernel[sp]);
+        // acc->readRun[sp].set_arg(2, info->alignedCompressedVertexNum);
         acc->mergeRun[sp] = xrt::run(acc->mergeKernel[sp]);
-        acc->mergeRun[sp].set_arg(4, info->alignedCompressedVertexNum);
+        acc->mergeRun[sp].set_arg(4, PARTITION_SIZE);
         acc->forwardRun[sp] = xrt::run(acc->forwardKernel[sp]);
-        acc->forwardRun[sp].set_arg(4, info->alignedCompressedVertexNum);
+        acc->forwardRun[sp].set_arg(4, PARTITION_SIZE);
         acc->writeRun[sp] = xrt::run(acc->writeKernel[sp]);
-        acc->writeRun[sp].set_arg(2, info->alignedCompressedVertexNum);
+        acc->writeRun[sp].set_arg(2, PARTITION_SIZE);
     }
 
     if (world_rank == 0) { // GAS worker
@@ -363,13 +380,14 @@ void setAccKernelArgs(int world_rank, int world_size, graphInfo *info, graphAcce
         // acc->applyRun.set_arg(0, acc->propBuffer[0]);
         acc->applyRun.set_arg(3, acc->outDegBuffer);
         acc->applyRun.set_arg(4, acc->outRegBuffer);
-        acc->applyRun.set_arg(5, info->alignedCompressedVertexNum); // depends on which SLR
+        // acc->applyRun.set_arg(5, info->alignedCompressedVertexNum); // depends on which SLR
+        acc->applyRun.set_arg(5, PARTITION_SIZE); // depends on which SLR
         acc->applyRun.set_arg(6, 0);
         acc->applyRun.set_arg(7, 0);
         acc->syncRun = xrt::run(acc->syncKernel);
         acc->syncRun.set_arg(2, 1);
         acc->syncRun.set_arg(3, 2048); // FIFO length
-        acc->syncRun.set_arg(4, info->alignedCompressedVertexNum); // vertex number
+        acc->syncRun.set_arg(4, PARTITION_SIZE); // vertex number
     }
 
 #endif
