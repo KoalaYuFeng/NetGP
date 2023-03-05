@@ -11,6 +11,7 @@
 #include <string>
 #include <unordered_map>
 #include "mpi_network.h"
+#include "mpi_host.h"
 
 // XRT includes
 #include "experimental/xrt_bo.h"
@@ -130,7 +131,7 @@ int AlveoVnxNetworkLayer::runARPDiscovery() {
 
 bool AlveoVnxNetworkLayer::IsARPTableFound(const std::string &dest_ip) {
     uint32_t valid_entry = 0, valid = 0;
-    uint32_t mac_lsb, mac_msb, arp_ip;
+    uint64_t mac_lsb, mac_msb, arp_ip;
     uint64_t mac_addr; // mac addr is used for debug
 
     uint32_t a, b, c, d;
@@ -156,11 +157,12 @@ bool AlveoVnxNetworkLayer::IsARPTableFound(const std::string &dest_ip) {
             ip_addr[2] = (arp_ip &     0xff00) >> 8;
             ip_addr[3] =  arp_ip &       0xff;
 
-            // std::cout<< " ARP ip_addr " << ip_addr[3] << '.'  << ip_addr[2] << '.' << ip_addr[1] << '.' << ip_addr[0] << std::endl;
+            log_debug(" ARP ip_addr %d.%d.%d.%d", ip_addr[3], ip_addr[2], ip_addr[1], ip_addr[0]);
             uint32_t temp = ip_addr[3] * 256 * 256 *256 + ip_addr[2] * 256 * 256 + ip_addr[1] * 256 + ip_addr[0];
-            // std::cout << std::hex << " mac_addr " << mac_msb << "..." << mac_lsb << "mac address"<< mac_addr << std::endl; // some problems in MAC address
+            // some problems in MAC address
+            log_debug(" mac_addr %x ... %x mac address %x", mac_msb, mac_lsb, mac_addr);
             if (temp == dest_ip_dec) {
-                // std::cout << "arp find dest ip" << dest_ip << std::endl;
+                log_debug("arp find dest ip %s", dest_ip.c_str());
                 return true;
             }
         }
@@ -186,9 +188,8 @@ int AlveoVnxNetworkLayer::getSocketTable() {
             ip_addr[2] = (udp_their_ip &     0xff00) >> 8;
             ip_addr[3] =  udp_their_ip &       0xff;
 
-            std::cout<< "Socket table[" << i << "]" << "  Their ip_addr " << ip_addr[0] << '.'  \
-                     << ip_addr[1] << '.' << ip_addr[2] << '.' << ip_addr[3] << "  Their port " \
-                     << udp_their_port << "  Our port " << udp_our_port <<std::endl;         
+            log_debug("Socket table[%d] Their ip_addr %d.%d.%d.%d Their port %d Our Port %d", \
+                        i, ip_addr[0], ip_addr[1], ip_addr[2], ip_addr[3], udp_their_port, udp_our_port);    
         }
     }
     return 0;
@@ -212,9 +213,8 @@ int AlveoVnxNetworkLayer::invalidSocketTable() {
             ip_addr[2] = (udp_their_ip &     0xff00) >> 8;
             ip_addr[3] =  udp_their_ip &       0xff;
 
-            std::cout<< "Invalid Socket table[" << i << "]" << "  Their ip_addr " << ip_addr[0] << '.'  \
-                     << ip_addr[1] << '.' << ip_addr[2] << '.' << ip_addr[3] << "  Their port " \
-                     << udp_their_port << "  Our port " << udp_our_port <<std::endl;         
+            log_debug("Invalid Socket table[%d] Their ip_addr %d.%d.%d.%d Their port %d Our port %d",\
+                         i, ip_addr[0], ip_addr[1], ip_addr[2], ip_addr[3], udp_their_port, udp_our_port);       
         }
     }
     return 0;

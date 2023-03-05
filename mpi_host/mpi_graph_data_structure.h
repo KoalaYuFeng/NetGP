@@ -12,27 +12,26 @@
 
 typedef struct
 {
-    xrt::kernel gsKernel[SUB_PARTITION_NUM];
+    xrt::kernel gsKernel[SUB_PARTITION_NUM/PROCESSOR_NUM];
     xrt::kernel applyKernel;
     xrt::kernel syncKernel;
-    xrt::kernel mergeKernel[SUB_PARTITION_NUM];
-    xrt::kernel forwardKernel[SUB_PARTITION_NUM];
-    xrt::kernel readKernel[SUB_PARTITION_NUM];
-    xrt::kernel writeKernel[SUB_PARTITION_NUM];
+    xrt::kernel mergeKernel[SUB_PARTITION_NUM/PROCESSOR_NUM];
+    xrt::kernel forwardKernel[SUB_PARTITION_NUM/PROCESSOR_NUM];
+    xrt::kernel readKernel[SUB_PARTITION_NUM/PROCESSOR_NUM];
+    xrt::kernel writeKernel[SUB_PARTITION_NUM/PROCESSOR_NUM];
 
-    xrt::run gsRun[SUB_PARTITION_NUM];
+    xrt::run gsRun[SUB_PARTITION_NUM/PROCESSOR_NUM];
     xrt::run applyRun;
     xrt::run syncRun;
-    xrt::run mergeRun[SUB_PARTITION_NUM];
-    xrt::run forwardRun[SUB_PARTITION_NUM]; // for root node, an extra forward kernel for apply
-    xrt::run readRun[SUB_PARTITION_NUM];
-    xrt::run writeRun[SUB_PARTITION_NUM]; // same as forward kernel 
+    xrt::run mergeRun[SUB_PARTITION_NUM/PROCESSOR_NUM];
+    xrt::run forwardRun[SUB_PARTITION_NUM/PROCESSOR_NUM]; // for root node, an extra forward kernel for apply
+    xrt::run readRun[SUB_PARTITION_NUM/PROCESSOR_NUM];
+    xrt::run writeRun[SUB_PARTITION_NUM/PROCESSOR_NUM]; // same as forward kernel 
 
     std::vector<std::vector<xrt::bo>> edgeBuffer; // each subpartition owns one buffer
-    std::vector<std::vector<xrt::bo>> tempBuffer; // for GS kernel temp result, could be optimized.
-    xrt::bo propBuffer[SUB_PARTITION_NUM]; // each subpartition owns one buffer
+    xrt::bo propBuffer[SUB_PARTITION_NUM/PROCESSOR_NUM]; // each subpartition owns one buffer
     std::vector<std::vector<xrt::bo>> subBuffer; // sub-buffers of propBuffer
-    xrt::bo propBufferNew[SUB_PARTITION_NUM]; // need to divide this buffer to several sub-buffers
+    xrt::bo propBufferNew[SUB_PARTITION_NUM/PROCESSOR_NUM]; // need to divide this buffer to several sub-buffers
     std::vector<std::vector<xrt::bo>> subNewBuffer; // sub-buffers of propBufferNew
     
     xrt::bo outDegBuffer; // each partition owns one buffer

@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <fstream>
 #include <sstream>
+#include <mpi.h>
 #include "mpi_graph_api.h"
 #include "mpi_host.h"
 // XRT includes
@@ -12,16 +13,12 @@
 #include "experimental/xrt_device.h"
 #include "experimental/xrt_kernel.h"
 
-#define EDEG_MEMORY_SIZE        ((edgeNum + (ALIGN_SIZE * 4) * 128) * 1)
-#define VERTEX_MEMORY_SIZE      (((vertexNum - 1)/MAX_VERTICES_IN_ONE_PARTITION + 1) * MAX_VERTICES_IN_ONE_PARTITION)
-
 int getPartitionNum (std::string dataset_name, int sub_partition_num) {
     int p_index = 0;
     int sp_index = 0;
     for (int p = 0; p < 100; p++) {
         for (int sp = 0; sp < 100; sp ++) {
             std::string file_name = dataset_name + "/p_" + std::to_string(p) + "_sp_" + std::to_string(sp) + ".txt";
-            // std::cout << file_name << std::endl;
             std::ifstream find_file(file_name.c_str());
             if (find_file.good()) {
                 p_index = (p > p_index)? p: p_index;
@@ -30,13 +27,12 @@ int getPartitionNum (std::string dataset_name, int sub_partition_num) {
         }
     }
     if (sub_partition_num != (sp_index + 1)) { // double check input txt file.
-        std::cout << "[ERROR] SUBPARTITION TXT FILE NOT ALIGN !" <<std::endl;
+        log_error("[ERROR] SUBPARTITION TXT FILE NOT ALIGN !");
     }
     return (p_index + 1);
 }
 
 int getTxtSize (std::string file_name) {
-    // std::cout << "[INFO] Getting file size ... " << file_name << " " ;
     std::fstream file;
     int line_num = 0;
     file.open(file_name, std::ios::in);
@@ -47,52 +43,26 @@ int getTxtSize (std::string file_name) {
         }
     }
     file.close();
-    // std::cout << line_num << std::endl;
     return line_num;
 }
 
-void schedulerFunction(const std::string &gName, const std::string &mode, graphInfo *info)
+int acceleratorDataLoad(const std::string &gName, graphInfo *info)
 {
-    std::cout << "[INFO] task scheduler, load order file ... " << std::endl;
+    std::string directory = GRAPH_DATASET_DIRETORY + std::to_string(SUB_PARTITION_NUM) + "/";
+    log_debug("Load grapg data from directory : %s", directory.c_str());
 
-    info->order.resize(info->partitionNum);
-    for (int i = 0; i < info->partitionNum; i++) {
-        info->order[i].resize(SUB_PARTITION_NUM);
-    }
-
-    std::string file_name = mode + gName + "/order.txt";
-    std::fstream file;
-    file.open(file_name, std::ios::in);
-    if (file.is_open()) {
-        std::string temp_line, temp_word;
-        int line = 0;
-        while(getline(file, temp_line)) {
-            std::stringstream ss(temp_line);
-            int i = 0;
-            while (getline(ss, temp_word, ' ')) {
-                info->order[line][i] = stoi(temp_word);
-                i += 1;
-            }
-            line += 1;
-        }
-    }
-    file.close();
-}
-
-int acceleratorDataLoad(const std::string &gName, const std::string &mode, graphInfo *info)
-{
-    int num_partition = getPartitionNum(mode + gName, SUB_PARTITION_NUM);
+    int num_partition = getPartitionNum(directory + gName, SUB_PARTITION_NUM);
     info->partitionNum = num_partition;
 
-    int vertex_num = getTxtSize(mode + gName + "/index_mapping.txt");
+    int vertex_num = getTxtSize(directory + gName + "/index_mapping.txt");
     info->vertexNum = vertex_num;
 
     // read vertex mapping file and outdeg file.
     std::fstream mapping_file;
     std::fstream out_deg_file;
     int num_mapped = 0;
-    mapping_file.open(mode + gName + "/index_mapping.txt", std::ios::in);
-    out_deg_file.open(mode + gName + "/outDeg.txt", std::ios::in);
+    mapping_file.open(directory + gName + "/index_mapping.txt", std::ios::in);
+    out_deg_file.open(directory + gName + "/outDeg.txt", std::ios::in);
     if (mapping_file.is_open() && out_deg_file.is_open()) {
         std::string mapping_t, out_deg_t;
         int int_map_t, int_deg_t;
@@ -108,71 +78,103 @@ int acceleratorDataLoad(const std::string &gName, const std::string &mode, graph
             } else if ((int_map_t == 2147483647) && (int_deg_t == 0)) {
                 info->outDegZeroIndex.push_back(line_num_t);
             } else {
-                std::cout << "[ERROR] Mapping file not equals to Outdeg file!" << std::endl;
+                log_error("[ERROR] Mapping file not equals to Outdeg file!");
             }
         }
         if (line_num_t != vertex_num) { // double check
-            std::cout << "[ERROR] Mapping and OutDeg file size not align!" << std::endl;
+            log_error("[ERROR] Mapping and OutDeg file size not align!");
         }
     } else {
-        std::cout << "[ERROR] Index and Mapping file can not open!" << std::endl;
+        log_error("[ERROR] Index and Mapping file can not open!");
         return 0;
     }
-    std::cout << "[INFO] load mapping and outdeg files done! " << std::endl;
+    log_trace("[TRACE] load mapping and outdeg files done! ");
 
+
+    // read scheduler order file
+    log_trace("[INFO] task scheduler, load order file ... ");
+    info->order.resize(info->partitionNum);
+    for (int i = 0; i < info->partitionNum; i++) {
+        info->order[i].resize(SUB_PARTITION_NUM);
+    }
+    std::fstream order_file;
+    order_file.open(directory + gName + "/order.txt", std::ios::in);
+    if (order_file.is_open()) {
+        std::string temp_line, temp_word;
+        int line = 0;
+        while(getline(order_file, temp_line)) {
+            std::stringstream ss(temp_line);
+            int i = 0;
+            while (getline(ss, temp_word, ' ')) {
+                info->order[line][i] = stoi(temp_word);
+                i += 1;
+            }
+            line += 1;
+        }
+    }
+    order_file.close();
+    log_trace("[TRACE] load scheduler order files done! ");
+
+
+    // Allocate edge mem space in Host side
     info->compressedVertexNum = num_mapped;
     int aligned_vertex_num = ((num_mapped + PARTITION_SIZE - 1) / PARTITION_SIZE) * PARTITION_SIZE;
     info->alignedCompressedVertexNum = aligned_vertex_num;
+    log_debug("whole graph compressed vertex num %d, algned %d", num_mapped, aligned_vertex_num);
+
+
+    int world_rank = -1;
+    MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
+    if (world_rank < 0) log_error("world rank error !");
+    int kernel_per_node = KERNEL_NUM / PROCESSOR_NUM;
 
     info->chunkProp.resize(num_partition);
     info->chunkEdgeData.resize(num_partition);
-    info->chunkTempData.resize(num_partition);
-    info->chunkPropData.resize(SUB_PARTITION_NUM);
-    info->chunkPropDataNew.resize(SUB_PARTITION_NUM);
+    info->chunkPropData.resize(kernel_per_node);
+    info->chunkPropDataNew.resize(kernel_per_node);
     for (int i = 0; i < num_partition; i++) {
-        info->chunkProp[i].resize(SUB_PARTITION_NUM);
-        info->chunkEdgeData[i].resize(SUB_PARTITION_NUM);
-        info->chunkTempData[i].resize(SUB_PARTITION_NUM);
+        info->chunkProp[i].resize(kernel_per_node);
+        info->chunkEdgeData[i].resize(kernel_per_node);
     }
 
     for (int p = 0; p < num_partition; p++) {
-        std::cout << "[INFO] Allocate edge mem space in Host side ... partition : " << p << std::endl;
-        for (int sp = 0; sp < SUB_PARTITION_NUM; sp++) {
-            std::string edge_txt_name = mode + gName + "/p_" + std::to_string(p) + "_sp_" + std::to_string(sp) + ".txt";
+        log_trace("Allocate mem space in Host side ... partition : %d", p);
+        for (int sp = 0; sp < kernel_per_node; sp++) {
+            int order_idx = (USE_SCHEDULER == true)? info->order[p][sp + world_rank*kernel_per_node] : (sp + world_rank*kernel_per_node);
+            std::string edge_txt_name = directory + gName + "/p_" + std::to_string(p) + "_sp_" + std::to_string(order_idx) + ".txt";
             int edge_num = getTxtSize(edge_txt_name);
             info->chunkProp[p][sp].edgeNumChunk = edge_num;
             info->chunkEdgeData[p][sp] = new int[edge_num * 2]; // each edge has 2 vertics.
             info->chunkPropData[sp] = new int[info->alignedCompressedVertexNum];
             info->chunkPropDataNew[sp] = new int[info->alignedCompressedVertexNum];
-            info->chunkTempData[p][sp] = new int[PARTITION_SIZE];
-
-            std::fill_n(info->chunkTempData[p][sp], PARTITION_SIZE, 0);
-            std::fill_n(info->chunkPropData[sp], info->alignedCompressedVertexNum, 0);
-            std::fill_n(info->chunkPropDataNew[sp], info->alignedCompressedVertexNum, 0);
-            std::fill_n(info->chunkEdgeData[p][sp], edge_num * 2, 0);
         }
     }
 
     info->chunkOutDegData = new int[info->alignedCompressedVertexNum];
     info->chunkOutRegData = new int[info->alignedCompressedVertexNum];
     info->chunkApplyPropData = new int[info->alignedCompressedVertexNum];
-    std::fill_n(info->chunkOutDegData, info->alignedCompressedVertexNum, 0);
-    std::fill_n(info->chunkOutRegData, info->alignedCompressedVertexNum, 0);
-    std::fill_n(info->chunkApplyPropData, info->alignedCompressedVertexNum, 0);
 
-    schedulerFunction(gName, mode, info); // load scheduler txt order file.
-
+    log_trace("Allocate mem space in Host side done!");
     return 0;
 }
 
-void partitionFunction(const std::string &gName, const std::string &mode, graphInfo *info)
+
+int acceleratorDataPreprocess(const std::string &gName, graphInfo *info)
 {
-    std::cout << "[INFO] load edge txt file after partition ... " << std::endl;
+    dataPrepareProperty(info); // function in each application directory
+
+    log_trace("[INFO] load edge txt file after partition ... ");
+    std::string directory = GRAPH_DATASET_DIRETORY + std::to_string(SUB_PARTITION_NUM) + "/";
+
+    int world_rank = -1;
+    MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
+    if (world_rank < 0) log_error("world rank error !");
+    int kernel_per_node = KERNEL_NUM / PROCESSOR_NUM;
 
     for (int p = 0; p < info->partitionNum; p++) {
-        for (int sp = 0; sp < SUB_PARTITION_NUM; sp++) {
-            int order_idx = (USE_SCHEDULER == true)? info->order[p][sp] : sp;
-            std::string file_name = mode + gName + "/p_" + std::to_string(p) + "_sp_" + std::to_string(order_idx) + ".txt";
+        for (int sp = 0; sp < kernel_per_node; sp++) {
+            int order_idx = (USE_SCHEDULER == true)? info->order[p][sp + world_rank*kernel_per_node] : (sp + world_rank*kernel_per_node);
+            std::string file_name = directory + gName + "/p_" + std::to_string(p) + "_sp_" + std::to_string(order_idx) + ".txt";
             std::fstream file;
             file.open(file_name, std::ios::in);
             if (file.is_open()) {
@@ -196,18 +198,10 @@ void partitionFunction(const std::string &gName, const std::string &mode, graphI
                 }
                 file.close(); // close the file object.
             } else {
-                std::cout << "[ERROR] can not open edge list file " << file_name << std::endl;
+                log_error("[ERROR] can not open edge list file %s", file_name.c_str());
             }
         }
     }
-
-    std::cout << "[INFO] load edge txt file done ! " << std::endl;
-}
-
-int acceleratorDataPreprocess(const std::string &gName, const std::string &mode, graphInfo *info)
-{
-    // schedulerRegister();
-    dataPrepareProperty(info);
-    partitionFunction(gName, mode, info);
+    log_trace("[INFO] load edge txt file done !");
     return 0;
 }

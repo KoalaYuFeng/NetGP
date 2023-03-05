@@ -8,8 +8,6 @@
 typedef struct
 {
     int edgeNumChunk; // edge number of a data chunk
-    int srcVertexNumChunk; // source vertex number of edgeNumChunk
-    int destVertexNumChunk; // dest vertex number of edgeNumChunk
 } chunkInfo;
 
 typedef struct
@@ -23,11 +21,6 @@ typedef struct
     std::vector<int> outDeg; // compressed vertex out degree
     std::vector<int> vertexMapping; // vertex mapping function, (compressed -> original)
     std::vector<int> outDegZeroIndex; // store vertex index whose ourDeg = 0;
-
-    std::vector<int> destIndexList; // used in partition function for time optimization;
-
-    std::vector<int> rpa; // row point array after compression
-    std::vector<int> cia; // column index array after compression
 
     std::vector<std::vector<int>> order; // used for task scheduling.
 

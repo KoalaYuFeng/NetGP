@@ -23,6 +23,7 @@ HOST_SRCS += ./mpi_network.cpp
 
 HOST_SRCS += ../common/includes/cmdparser/cmdlineparser.cpp
 HOST_SRCS += ../common/includes/logger/logger.cpp
+HOST_SRCS += ../utils/log/log.cpp
 # HOST_SRCS += ../libgraph/verification/host_graph_cmodel.cpp
 # HOST_SRCS += ../libgraph/verification/host_graph_verification_apply.cpp
 # HOST_SRCS += ../libgraph/verification/host_graph_verification_gs.cpp
@@ -38,12 +39,15 @@ CXXFLAGS += -I $(APPCONFIG)
 CXXFLAGS += -I ../app_udfs
 CXXFLAGS += -I ../common/includes/cmdparser
 CXXFLAGS += -I ../common/includes/logger
+CXXFLAGS += -I ../utils/log
 
 # application specific parameter
 CXXFLAGS += -DSUB_PARTITION_NUM=$(SUB_PARTITION_NUM)
 CXXFLAGS += -DPARTITION_SIZE=$(PARTITION_SIZE)
 CXXFLAGS += -DAPPLY_REF_ARRAY_SIZE=$(APPLY_REF_ARRAY_SIZE)
 CXXFLAGS += -DPROCESSOR_NUM=$(PROCESSOR_NUM)
+CXXFLAGS += -DUSE_SCHEDULER=$(USE_SCHEDULER)
+CXXFLAGS += -DKERNEL_NUM=$(KERNEL_NUM)
 
 CXXFLAGS += -I$(XILINX_XRT)/include -I$(XILINX_VIVADO)/include -Wall
 CXXFLAGS += -I/$(XILINX_HLS)/Vivado_HLS/include/ -O3 -g -fmessage-length=0 -std=c++14 -Wno-deprecated-declarations
