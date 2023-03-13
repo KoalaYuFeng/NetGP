@@ -18,7 +18,8 @@ void processEdgeWrite(
     uint_raw                sink_offset,
     uint_raw                sink_end,
     hls::stream<uint_uram>  (&writeArray)[PE_NUM],
-    uint16                  *tmpVertexProp
+    // uint16                  *tmpVertexProp
+    hls::stream<burst_dest>  &tmpVertex_stream
 )
 {
     uint_raw dstEnd   = sink_end;
@@ -65,9 +66,12 @@ void processEdgeWrite(
         {
 #pragma HLS PIPELINE II=1
 #pragma HLS loop_flatten off
+            burst_dest out_raw;
+            out_raw.data = writeBuffer[burst_index];
+            write_to_stream(tmpVertex_stream, out_raw);
 
-            tmpVertexProp[(i << LOG2_BURST_WRITE_SIZE) + burst_index ]
-                = writeBuffer[burst_index];
+            // tmpVertexProp[(i << LOG2_BURST_WRITE_SIZE) + burst_index ]
+            //     = writeBuffer[burst_index];
 
         }
     }

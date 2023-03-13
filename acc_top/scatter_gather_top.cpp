@@ -11,10 +11,11 @@
 #include "fpga_edge_prop.h"
 
 extern "C" {
-    void  readEdgesCU1(
+    void  gatherScatter(
         uint16          *edgesHeadArray,
         uint16          *vertexPushinProp,
-        uint16          *tmpVertexProp,
+        // uint16          *tmpVertexProp,
+        hls::stream<burst_dest>  &tmpVertex_stream,
 #if HAVE_EDGE_PROP
         uint16          *edgeProp,
 #endif
@@ -33,8 +34,8 @@ extern "C" {
 #pragma HLS INTERFACE m_axi port=edgesHeadArray offset=slave bundle=gmem0 max_read_burst_length=64
 #pragma HLS INTERFACE s_axilite port=edgesHeadArray bundle=control
 
-#pragma HLS INTERFACE m_axi port=tmpVertexProp offset=slave bundle=gmem1 max_read_burst_length=64 num_write_outstanding=4
-#pragma HLS INTERFACE s_axilite port=tmpVertexProp bundle=control
+// #pragma HLS INTERFACE m_axi port=tmpVertexProp offset=slave bundle=gmem1 max_read_burst_length=64 num_write_outstanding=4
+// #pragma HLS INTERFACE s_axilite port=tmpVertexProp bundle=control
 
 #pragma HLS INTERFACE m_axi port=vertexPushinProp offset=slave bundle=gmem1 max_read_burst_length=64 num_write_outstanding=4
 #pragma HLS INTERFACE s_axilite port=vertexPushinProp bundle=control
@@ -217,7 +218,8 @@ extern "C" {
             processEdgesSlice(writeArrayLayer1[i], writeArray[i]);
         }
 
-        processEdgeWrite(sink_offset, sink_end, writeArray, tmpVertexProp);
+        // processEdgeWrite(sink_offset, sink_end, writeArray, tmpVertexProp);
+        processEdgeWrite(sink_offset, sink_end, writeArray, tmpVertex_stream);
 
     }
 

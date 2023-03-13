@@ -6,7 +6,7 @@ COMMON_REPO     = ./
 ABS_COMMON_REPO = $(shell readlink -f $(COMMON_REPO))
 UTILS_PATH      = ./utils
 
-.PHONY: all clean exe hwemuprepare $(EXECUTABLE) emconfig 
+.PHONY: all clean exe hwemuprepare ${EXECS} emconfig 
 all: precheck
 exe: precheck
 clean: precheck
@@ -31,22 +31,22 @@ include ./app_udfs/common.mk
 
 # $(shell ./utils/automation.sh $(app) $(KERNEL_NUM) $(HAVE_APPLY) > /dev/null )
 
-## include acc_top/gs_kernel.mk
-## include acc_top/apply_kernel.mk
+ifeq ($(NODE_TYPE), GAS)
+	include acc_top/NetGP_GAS.mk
+else ifeq ($(NODE_TYPE), GS)
+	include acc_top/NetGP_GS.mk
+else
+	@echo "NODE TYPE not match"
+	exit 1
+endif
 
-## enable multi kernels, add gs kernel
-include acc_top/gs_kernel.mk
-include acc_top/apply_multi_kernel.mk
-include acc_top/merge_multi_kernel.mk
-include acc_top/forward_multi_kernel.mk
-include acc_top/read_vertex.mk
-include acc_top/write_vertex.mk
 
 include $(UTILS_PATH)/bitstream.mk
 include $(UTILS_PATH)/clean.mk
+include ./mpi_host/mpi_host.mk
 
 
-all: $(BINARY_CONTAINERS) emconfig $(EXECUTABLE)
-exe: $(EXECUTABLE)
+all: $(BINARY_CONTAINERS) emconfig ${EXECS}
+exe: ${EXECS}
 
 endif

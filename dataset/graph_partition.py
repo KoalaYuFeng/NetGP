@@ -8,7 +8,13 @@ print (dataset)
 
 for dataset_index in range(len(dataset)):
     
-    parent_path = './graph_dataset_sub_12_change/'
+    parent_path = './graph_dataset_sub_change_12/'
+    if (os.path.exists(parent_path) == True):
+        print("Already exists ", parent_path)
+    else :
+        os.mkdir(parent_path)
+        print("Create directory ", parent_path)
+
     directory = dataset[dataset_index][0]
     path = os.path.join(parent_path, directory)
 
@@ -26,7 +32,7 @@ for dataset_index in range(len(dataset)):
     sub_partition_num = 12
     UNMAPPED_FLAG = 2147483647 ## 0x7fffffff, max vertex index
     END_FLAG = 2147483646 ## 0x7fffffff - 1, end_flag value
-    alignment_size = 4*1024 ## edge num of each sub-partition should be 4K align
+    alignment_size = 16 ## edge num of each sub-partition should be 4K align
 
     print ("Load data from hard-disk ... ... ", filename)
     txt_array_t = np.int64(np.loadtxt(filename))
@@ -99,21 +105,22 @@ for dataset_index in range(len(dataset)):
         array_temp = array_temp[np.lexsort([array_temp.T[0]])]
 
         edge_num_p = len(array_temp)
-        edge_num_p = edge_num_p/sub_partition_num
+        edge_num_p = (edge_num_p + sub_partition_num - 1)/sub_partition_num + 1
         edge_num_p = np.int32((edge_num_p + alignment_size - 1)/alignment_size) * alignment_size
 
-        edge_idx = 0
+        edge_idx_offset = 0
         edge_idx_t = 0
         for j in range(sub_partition_num):
             array_sp = np.zeros((edge_num_p, 2),dtype = np.int32)
             for k in range(edge_num_p):
                 if ((k*sub_partition_num + j) >= len(array_temp)):
-                    edge_idx = edge_idx_t
-                    edge_idx_t = 0
-                    array_sp[k][0] = array_temp[len(array_temp)-1][0]
+                    ## corner case: if len(array_temp) can be divided by 16, it will not tough this.
+                    ## solution: let edge_num = edge_num + 1, to avoid this.
+                    edge_idx_offset = edge_idx_t
+                    array_sp[k][0] = array_temp[edge_idx_offset - 1][0]
                     array_sp[k][1] = END_FLAG
                 else:
-                    array_sp[k, :] = array_temp[edge_idx + k, :]
+                    array_sp[k, :] = array_temp[edge_idx_offset + k, :]
                     edge_idx_t += 1
 
                 # if ((j*edge_num_p + k) >= len(array_temp)):

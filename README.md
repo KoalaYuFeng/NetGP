@@ -1,6 +1,6 @@
 ## Introduction
 
-Enable network module for ThunderGP. 
+NetGP: The extended version of ThunderGP, integrate application-specific network module in ThunderGP for multi-FPGA execution. 
 
 ## Prerequisites
 * The gcc-9.4
@@ -23,16 +23,16 @@ The desired application can be implemented by passing argument ```app=[the algor
 | ```app=ar``` | ArticleRank  (AR)|
 | ```app=wcc``` | Weakly Connected Component  (WCC)|
 
+Besides, NetGP has two types of nodes: GAS node and GS node for multi-node execution. Pass argument ```node_type=[the node type]``` to ``` make ``` command.
+| Argument    | Accelerated algorithm  |
+|--------------|--------------|
+| ```node_type=gas``` | node with Apply, Sync, Merge, Forward, GatherScatter, Write kernels |
+| ```node_type=gs``` | node with Merge, Forward, GatherScatter, Write kernels |
+
 #### Here is the example of implementing the accelerator for PageRank on Alveo U250 platform with Vitis 2021.2. 
 ```sh
 $ vim ThunderGP.mk 
 $ # configure the DEVICE as DEVICES := xilinx_u250_gen3x16_xdma_3_1_202020_1; configure TARGETS := hw
-$ make app=pr all # make the FPGA bitstream. It takes time :) around 5 hours.
+$ make app=pr node_type=gas all # make the FPGA bitstream. It takes time :) around 12 hours.
 # For execution on real hardware. The path of graph dataset needs to be provided by the user. 
 ```
-
-## attention
-// there need some modification in connection.ini file, advanced [advanced] path.
-
-
-

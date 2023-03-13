@@ -2,7 +2,7 @@ include ThunderGP.mk
 
 .PHONY: all clean exe hwemuprepare
 
-INTERFACE := 1 ## using interface 1
+INTERFACE := 3 ## using interface 0 and 1
 
 NETLAYERDIR = NetLayers/
 CMACDIR     = Ethernet/
@@ -12,11 +12,21 @@ NETLAYERHLS = 100G-fpga-network-stack-core
 TEMP_DIR := _x
 BINARY_CONTAINER_OBJS = $(NETLAYERDIR)$(TEMP_DIR)/networklayer.xo
 
-CONFIGFLAGS = --config ./connection.ini
+ifeq ($(NODE_TYPE), GAS)
+	CONFIGFLAGS += --config ./connection_GAS.ini
+else ifeq ($(NODE_TYPE), GS)
+	CONFIGFLAGS += --config ./connection_GS.ini
+else
+	@echo "NODE TYPE not match"
+	exit 1
+endif
+
+CONFIGFLAGS += --advanced.param compiler.userPostSysLinkOverlayTcl=$(CMACDIR)post_sys_link.tcl
 #CONFIGFLAGS += --kernel_frequency 280
 
 # Include cmac kernel depending on the interface
 BINARY_CONTAINER_OBJS += $(CMACDIR)$(TEMP_DIR)/cmac_1.xo
+BINARY_CONTAINER_OBJS += $(CMACDIR)$(TEMP_DIR)/cmac_0.xo
 
 # Linker parameters
 # Linker userPostSysLinkTcl param
@@ -35,11 +45,5 @@ $(CMACDIR)$(TEMP_DIR)/%.xo:
 
 $(NETLAYERDIR)$(TEMP_DIR)/%.xo:
 	make -C $(NETLAYERDIR) all DEVICES=$(DEVICES)
-
-
-# BINARY_LINK_OBJS    += --connectivity.nk cmac_1:1
-# BINARY_LINK_OBJS    += --connectivity.nk networklayer:1
-# BINARY_LINK_OBJS    += --connectivity.slr cmac_1:SLR2
-# BINARY_LINK_OBJS    += --connectivity.slr networklayer_1:SLR2
 
 include utils/main.mk
