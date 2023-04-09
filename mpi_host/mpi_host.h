@@ -10,7 +10,9 @@
 #define ENDFLAG                 0xffffffff
 #define USE_APPLY               true
 #define SUPERSTEP_NUM           10
-#define GRAPH_DATASET_DIRETORY  "/data/yufeng/graph_partition/graph_dataset_sub_change_"
+// #define GRAPH_DATASET_DIRETORY  "/data/yufeng/graph_partition/graph_dataset_sub_change_"
+#define GRAPH_DATASET_DIRETORY  "/data/yufeng/large_graph_no_shuffle/"
+// #define GRAPH_DATASET_DIRETORY  "/data/yufeng/large_graph/"
 
 void partitionTransfer(graphInfo *info, graphAccelerator *acc);
 void setAccKernelArgs(graphInfo *info, graphAccelerator * acc);

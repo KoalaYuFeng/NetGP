@@ -12,6 +12,7 @@
 #include "mpi_graph_api.h"
 #include "mpi_host.h"
 #include "mpi_network.h"
+#include "mpi_cmodel.h"
 
 // XRT includes
 #include "experimental/xrt_bo.h"
