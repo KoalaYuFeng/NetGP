@@ -4,12 +4,12 @@ import os
 dataset = [['R12', 'rmat-12-4.txt'], ['WP', 'wikipedia-20070206.mtx'], ['HW', 'ca-hollywood-2009.mtx'], ['LJ', 'LiveJournal1.txt'], 
            ['R19', 'rmat-19-32.txt'], ['R21','rmat-21-32.txt'], ['R24','rmat-24-16.txt'], ['G23', 'graph500-scale23-ef16_adj.edges'],
            ['G24', 'graph500-scale24-ef16_adj.edges'], ['G25', 'graph500-scale25-ef16_adj.edges'], ['TW', 'twitter-2010.txt'],
-           ['K26', 'kron-26-16.txt'], ['K28', 'kron-28-16.txt']]
+           ['K26', 'kron-26-16.txt'], ['K28', 'kron-28-16.txt'], ['K29', 'kron-29-16.txt'], ['K30', 'kron-30-8.txt']]
 print (dataset)
 
 for dataset_index in range(len(dataset)):
     
-    parent_path = '/data/yufeng/large_graph/'
+    parent_path = '/data/yufeng/large_graph_no_shuffle/'
     if (os.path.exists(parent_path) == True):
         print("Already exists ", parent_path)
     else :
@@ -34,7 +34,7 @@ for dataset_index in range(len(dataset)):
     UNMAPPED_FLAG = -1 ## outDeg = 0
     END_FLAG = -2 ## end_flag value
     alignment_size = 16 ## edge num of each sub-partition should be 16 edge-aligned
-    shuffle = True ## subpartition data shuffle for workload balance
+    shuffle = False ## subpartition data shuffle for workload balance
 
     print ("=======================================")
     print ("============= configuration ===========")
